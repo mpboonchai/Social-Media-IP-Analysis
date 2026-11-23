@@ -21,7 +21,7 @@ interface FileResultItem {
 interface QueuedFile {
   id: string;
   file: File;
-  state: "queued" | "uploading" | "done" | "duplicate" | "error";
+  state: "queued" | "uploading" | "done" | "duplicate" | "error" | "cancelled";
   result?: FileResultItem;
 }
 
@@ -44,6 +44,7 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [liveStatus, setLiveStatus] = useState("");
   const [doneSummary, setDoneSummary] = useState<{
@@ -51,6 +52,7 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
     processedFiles: number;
     duplicateFiles: number;
     failedFiles: number;
+    cancelledFiles: number;
     totalParsed: number;
     totalInsertedNew: number;
     totalSkippedDup: number;
@@ -60,6 +62,8 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
   } | null>(null);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const cancelRef = useRef(false);
+  const abortControllersRef = useRef<Set<AbortController>>(new Set());
 
   if (!open) return null;
 
@@ -93,16 +97,39 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
     }
   }
 
-  async function uploadSingleWithRetry(file: File): Promise<{ ok: boolean; status: number; body: { results?: FileResultItem[]; error?: string } }> {
+  function handleCancelUpload() {
+    if (!busy) return;
+    cancelRef.current = true;
+    setCancelling(true);
+    setLiveStatus("กำลังยกเลิกการอัปโหลดและหยุดคิวที่เหลือ...");
+    for (const ctrl of abortControllersRef.current) {
+      try {
+        ctrl.abort();
+      } catch {
+        // ignore
+      }
+    }
+    abortControllersRef.current.clear();
+  }
+
+  async function uploadSingleWithRetry(
+    file: File
+  ): Promise<{ ok: boolean; aborted?: boolean; status: number; body: { results?: FileResultItem[]; error?: string } }> {
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (cancelRef.current) return { ok: false, aborted: true, status: 0, body: {} };
+      const ctrl = new AbortController();
+      abortControllersRef.current.add(ctrl);
       try {
         const fd = new FormData();
         fd.append("platform_hint", platformHint);
         fd.append("files", file);
-        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        const res = await fetch("/api/upload", { method: "POST", body: fd, signal: ctrl.signal });
         const body = await res.json();
         if (res.ok || attempt === 1) return { ok: res.ok, status: res.status, body };
       } catch (err) {
+        if (ctrl.signal.aborted || cancelRef.current) {
+          return { ok: false, aborted: true, status: 0, body: {} };
+        }
         if (attempt === 1) {
           return {
             ok: false,
@@ -110,6 +137,8 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
             body: { error: err instanceof Error ? err.message : "Network error" },
           };
         }
+      } finally {
+        abortControllersRef.current.delete(ctrl);
       }
       await new Promise((r) => setTimeout(r, 600));
     }
@@ -118,6 +147,8 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
 
   async function startUpload() {
     if (!queue.length || busy) return;
+    cancelRef.current = false;
+    setCancelling(false);
     setBusy(true);
     setDoneSummary(null);
 
@@ -130,6 +161,7 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
     let processedFiles = 0;
     let duplicateFiles = 0;
     let failedFiles = 0;
+    let cancelledFiles = 0;
     let totalParsed = 0;
     let totalInsertedNew = 0;
     let totalSkippedDup = 0;
@@ -139,6 +171,7 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
 
     const runWorker = async () => {
       while (cursor < total) {
+        if (cancelRef.current) break;
         const i = cursor++;
         const item = snapshot[i];
         setLiveStatus(
@@ -146,7 +179,13 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
         );
         setQueue((prev) => prev.map((q, idx) => (idx === i ? { ...q, state: "uploading" } : q)));
 
-        const { ok, status, body } = await uploadSingleWithRetry(item.file);
+        const { ok, aborted, status, body } = await uploadSingleWithRetry(item.file);
+        if (aborted || cancelRef.current) {
+          cancelledFiles++;
+          setQueue((prev) => prev.map((q, idx) => (idx === i ? { ...q, state: "cancelled" } : q)));
+          continue;
+        }
+
         const r: FileResultItem | undefined = body.results?.[0];
 
         if (!ok || !r || r.status === "failed") {
@@ -198,13 +237,28 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
 
     await Promise.all(Array.from({ length: concurrency }, runWorker));
 
+    // Mark any untouched queued files as cancelled if user cancelled
+    if (cancelRef.current) {
+      const remaining = Math.max(0, total - cursor);
+      cancelledFiles += remaining;
+      setQueue((prev) =>
+        prev.map((q) => (q.state === "queued" || q.state === "uploading" ? { ...q, state: "cancelled" } : q))
+      );
+    }
+
     setBusy(false);
-    setLiveStatus("อัปโหลดและประมวลผลครบทุกไฟล์เรียบร้อยแล้ว!");
+    setCancelling(false);
+    setLiveStatus(
+      cancelRef.current
+        ? `ยกเลิกการอัปโหลดแล้ว (นำเข้าสำเร็จก่อนยกเลิก ${processedFiles} ไฟล์ · ยกเลิก ${cancelledFiles} ไฟล์)`
+        : "อัปโหลดและประมวลผลครบทุกไฟล์เรียบร้อยแล้ว!"
+    );
     setDoneSummary({
       totalFiles: total,
       processedFiles,
       duplicateFiles,
       failedFiles,
+      cancelledFiles,
       totalParsed,
       totalInsertedNew,
       totalSkippedDup,
@@ -212,7 +266,9 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
       totalRdapExternal,
       totalScammerMatched,
     });
-    onComplete();
+    if (processedFiles > 0) {
+      onComplete();
+    }
   }
 
   function handleResetAndClose() {
@@ -375,6 +431,8 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
                             ? "bg-amber-900/80 text-amber-200"
                             : q.state === "error"
                             ? "bg-rose-900/80 text-rose-200"
+                            : q.state === "cancelled"
+                            ? "bg-slate-700 text-slate-200"
                             : "bg-[#0f2454] text-blue-200"
                         }`}
                       >
@@ -386,6 +444,8 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
                           ? "นำเข้าสำเร็จ"
                           : q.state === "duplicate"
                           ? "ไฟล์ซ้ำ (ข้าม)"
+                          : q.state === "cancelled"
+                          ? "ยกเลิกแล้ว"
                           : "ผิดพลาด"}
                       </span>
                       {!busy && q.state === "queued" && (
@@ -448,10 +508,20 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
 
         {/* Final Completion Notification Banner */}
         {doneSummary && (
-          <div className="rounded-xl bg-emerald-950/60 border-2 border-emerald-400/60 p-3.5 space-y-2 text-xs">
-            <div className="flex items-center gap-2 text-emerald-300 font-bold text-sm">
+          <div className={`rounded-xl border-2 p-3.5 space-y-2 text-xs ${
+            doneSummary.cancelledFiles > 0
+              ? "bg-amber-950/50 border-amber-400/60"
+              : "bg-emerald-950/60 border-emerald-400/60"
+          }`}>
+            <div className={`flex items-center gap-2 font-bold text-sm ${
+              doneSummary.cancelledFiles > 0 ? "text-amber-300" : "text-emerald-300"
+            }`}>
               <CheckCircle2 className="w-5 h-5 shrink-0" />
-              <span>อัปโหลดและบันทึกลงฐานข้อมูล TiDB Cloud เสร็จสมบูรณ์!</span>
+              <span>
+                {doneSummary.cancelledFiles > 0
+                  ? `หยุดการอัปโหลดแล้ว (ยกเลิก ${fmt(doneSummary.cancelledFiles)} ไฟล์ · ไฟล์ที่เสร็จก่อนหน้าถูกบันทึกแล้ว)`
+                  : "อัปโหลดและบันทึกลงฐานข้อมูล TiDB Cloud เสร็จสมบูรณ์!"}
+              </span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
               <div className="rounded-lg bg-[#05112b] p-2 border border-[#1d3a78]">
@@ -489,7 +559,18 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
         )}
 
         {/* Footer Buttons */}
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
+          {busy && (
+            <button
+              type="button"
+              disabled={cancelling}
+              onClick={handleCancelUpload}
+              className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs sm:text-sm disabled:opacity-50 flex items-center gap-1.5 mr-auto"
+            >
+              <X className="w-4 h-4" />
+              {cancelling ? "กำลังยกเลิก..." : "ยกเลิกการอัปโหลด"}
+            </button>
+          )}
           <button
             type="button"
             disabled={busy}

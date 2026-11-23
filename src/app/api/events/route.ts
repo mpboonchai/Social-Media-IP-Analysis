@@ -51,12 +51,22 @@ export async function GET(req: NextRequest) {
   const scammerOnly = sp.get("scammer_only") === "true";
   const caseWindowOnly = sp.get("case_window_only") === "true";
 
-  // Excel-style multi-value column filters (delimited by "||")
+  // Excel-style multi-value column filters (delimited by "||") — ALL columns
+  const colLocalDate = parseCsvParam(sp.get("col_local_date"));
   const colPlatform = parseCsvParam(sp.get("col_platform"));
-  const colTeam = parseCsvParam(sp.get("col_team"));
-  const colReportedDate = parseCsvParam(sp.get("col_reported_date"));
+  const colItNo = parseCsvParam(sp.get("col_it_no"));
+  const colTargetId = parseCsvParam(sp.get("col_target_id"));
+  const colInstId = parseCsvParam(sp.get("col_inst_id"));
+  const colTpoCode = parseCsvParam(sp.get("col_tpo_code"));
   const colScammerCase = parseCsvParam(sp.get("col_scammer_case"));
+  const colReportedDate = parseCsvParam(sp.get("col_reported_date"));
+  const colTeam = parseCsvParam(sp.get("col_team"));
+  const colAccount = parseCsvParam(sp.get("col_account"));
   const colMetaType = parseCsvParam(sp.get("col_meta_type"));
+  const colIp = parseCsvParam(sp.get("col_ip"));
+  const colNetwork = parseCsvParam(sp.get("col_network"));
+  const colCountry = parseCsvParam(sp.get("col_country"));
+  const colLetter = parseCsvParam(sp.get("col_letter"));
 
   // Sorting
   const sortByRaw = (sp.get("sort_by") || "id").trim();
@@ -128,31 +138,59 @@ export async function GET(req: NextRequest) {
     needsTrackingJoin = true;
   }
 
-  // Apply Excel-style column filters
+  // Helper for Excel multi-select column filter
+  const addColIn = (expr: string, values: string[]) => {
+    if (!values.length) return;
+    const normalized = values.map((v) => (v === "(ว่าง)" ? "" : v));
+    where.push(`COALESCE(${expr}, '') IN (${normalized.map(() => "?").join(",")})`);
+    params.push(...normalized);
+  };
+
+  if (colLocalDate.length) {
+    const normalized = colLocalDate.map((v) => (v === "(ว่าง)" ? "" : v));
+    where.push(`COALESCE(DATE_FORMAT(e.event_local, '%Y-%m-%d'), '') IN (${normalized.map(() => "?").join(",")})`);
+    params.push(...normalized);
+  }
   if (colPlatform.length) {
     where.push(`e.platform IN (${colPlatform.map(() => "?").join(",")})`);
     params.push(...colPlatform);
   }
-  if (colTeam.length) {
-    const vals = colTeam.map((v) => (v === "(ว่าง)" ? "" : v));
-    where.push(`COALESCE(e.team, '') IN (${vals.map(() => "?").join(",")})`);
-    params.push(...vals);
+  addColIn("e.it_no", colItNo);
+  if (colTargetId.length) {
+    addColIn("sa.target_id", colTargetId);
+    needsSaJoin = true;
   }
-  if (colReportedDate.length) {
-    const vals = colReportedDate.map((v) => (v === "(ว่าง)" ? "" : v));
-    where.push(`COALESCE(e.reported_date, '') IN (${vals.map(() => "?").join(",")})`);
-    params.push(...vals);
-  }
-  if (colScammerCase.length) {
-    const vals = colScammerCase.map((v) => (v === "(ว่าง)" ? "" : v));
-    where.push(`COALESCE(e.scammer_case, '') IN (${vals.map(() => "?").join(",")})`);
-    params.push(...vals);
+  addColIn("e.inst_id", colInstId);
+  addColIn("e.tpo_code", colTpoCode);
+  addColIn("e.scammer_case", colScammerCase);
+  addColIn("e.reported_date", colReportedDate);
+  addColIn("e.team", colTeam);
+  if (colAccount.length) {
+    addColIn("sa.account_name", colAccount);
+    needsSaJoin = true;
   }
   if (colMetaType.length) {
-    const vals = colMetaType.map((v) => (v === "(ว่าง)" ? "" : v));
-    where.push(`COALESCE(sa.meta_account_type, '') IN (${vals.map(() => "?").join(",")})`);
-    params.push(...vals);
+    addColIn("sa.meta_account_type", colMetaType);
     needsSaJoin = true;
+  }
+  if (colIp.length) {
+    const ipBufs = colIp.map((ip) => ipToBuffer(ip)?.buf).filter((b): b is Buffer => Boolean(b));
+    if (ipBufs.length) {
+      where.push(`e.ip_bin IN (${ipBufs.map(() => "?").join(",")})`);
+      params.push(...ipBufs);
+    }
+  }
+  if (colNetwork.length) {
+    addColIn("r.network_name", colNetwork);
+    needsRdapJoin = true;
+  }
+  if (colCountry.length) {
+    addColIn("r.country", colCountry);
+    needsRdapJoin = true;
+  }
+  if (colLetter.length) {
+    addColIn("t.letter_number", colLetter);
+    needsTrackingJoin = true;
   }
 
   if (search) {
@@ -211,6 +249,8 @@ export async function GET(req: NextRequest) {
       e.case_window_match,
       e.source_zip,
       e.source_pdf,
+      e.source_no,
+      e.tiktok_country,
       e.no_ip_data,
       sa.account_name AS account,
       sa.account_identifier,
@@ -221,6 +261,8 @@ export async function GET(req: NextRequest) {
       COALESCE(r.country, '') AS country,
       COALESCE(r.network_name, '') AS network,
       COALESCE(r.owner_name, '') AS owner,
+      COALESCE(r.from_ip, '') AS from_ip,
+      COALESCE(r.to_ip, '') AS to_ip,
       COALESCE(t.unavailable, 0) AS unavailable,
       COALESCE(t.requested, 0) AS requested,
       COALESCE(t.replied, 0) AS replied,
@@ -228,8 +270,21 @@ export async function GET(req: NextRequest) {
       COALESCE(t.no_ip_request_needed, 0) AS no_ip_request_needed,
       COALESCE(t.letter_number, '') AS letter_number,
       COALESCE(t.result, '') AS result,
+      COALESCE(t.entity_user_id, '') AS entity_user_id,
       COALESCE(t.entity_name, '') AS entity_name,
-      COALESCE(t.entity_phone, '') AS entity_phone
+      COALESCE(t.entity_country, '') AS entity_country,
+      COALESCE(t.entity_address, '') AS entity_address,
+      COALESCE(t.entity_email, '') AS entity_email,
+      COALESCE(t.entity_phone, '') AS entity_phone,
+      COALESCE(t.entity_payment, '') AS entity_payment,
+      COALESCE(t.entity_account_no, '') AS entity_account_no,
+      COALESCE(t.access_service, '') AS access_service,
+      COALESCE(t.access_datetime_local, '') AS access_datetime_local,
+      COALESCE(t.access_ip, '') AS access_ip,
+      COALESCE(t.access_remote_port, '') AS access_remote_port,
+      COALESCE(t.access_ip_country, '') AS access_ip_country,
+      COALESCE(t.access_network, '') AS access_network,
+      COALESCE(t.access_isp, '') AS access_isp
   `;
 
   const recordsPromise =
@@ -273,11 +328,21 @@ export async function GET(req: NextRequest) {
     dateTo,
     scammerOnly,
     caseWindowOnly,
+    colLocalDate,
     colPlatform,
-    colTeam,
-    colReportedDate,
+    colItNo,
+    colTargetId,
+    colInstId,
+    colTpoCode,
     colScammerCase,
+    colReportedDate,
+    colTeam,
+    colAccount,
     colMetaType,
+    colIp,
+    colNetwork,
+    colCountry,
+    colLetter,
   });
 
   const cached = getCachedEventStats(cacheKey);

@@ -18,12 +18,41 @@ import {
   Table2,
   LayoutDashboard,
   ArrowUpDown,
+  BarChart3,
+  ShieldAlert,
 } from "lucide-react";
 import type { SessionUser } from "@/lib/auth";
 import ColumnFilterPopover from "./ColumnFilterPopover";
-import ExcelManagerView, { type ExcelEventRow } from "./ExcelManagerView";
+import ExcelManagerView, {
+  type AllColFilters,
+  type ColFilterKey,
+  type ExcelEventRow,
+} from "./ExcelManagerView";
+import CountryIspStatsView from "./CountryIspStatsView";
+import ScammerCasesSheet from "./ScammerCasesSheet";
 
 type IpEventRow = ExcelEventRow;
+
+const EMPTY_COL_FILTERS: AllColFilters = {
+  local_date: [],
+  platform: [],
+  it_no: [],
+  target_id: [],
+  inst_id: [],
+  tpo_code: [],
+  scammer_case: [],
+  reported_date: [],
+  team: [],
+  account: [],
+  meta_type: [],
+  ip: [],
+  network: [],
+  country: [],
+  letter: [],
+};
+
+const uniq = (arr: Array<string | null | undefined>) =>
+  Array.from(new Set(arr.map((v) => String(v || "").trim() || "(ว่าง)"))).sort();
 
 interface DashboardResponse {
   kpi: {
@@ -145,7 +174,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState(25);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeView, setActiveView] = useState<"dashboard" | "excel">("dashboard");
+  const [activeView, setActiveView] = useState<"dashboard" | "analytics" | "excel" | "scammers">("dashboard");
   const [lastRefreshed, setLastRefreshed] = useState("");
 
   // Filters
@@ -161,22 +190,10 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   const [scammerOnly, setScammerOnly] = useState(false);
   const [caseWindowOnly, setCaseWindowOnly] = useState(false);
 
-  // Sorting & Excel-style column filters
+  // Sorting & Excel-style ALL-column filters
   const [sortBy, setSortBy] = useState("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [colFilters, setColFilters] = useState<{
-    platform: string[];
-    team: string[];
-    reported_date: string[];
-    scammer_case: string[];
-    meta_type: string[];
-  }>({
-    platform: [],
-    team: [],
-    reported_date: [],
-    scammer_case: [],
-    meta_type: [],
-  });
+  const [colFilters, setColFilters] = useState<AllColFilters>(EMPTY_COL_FILTERS);
 
   const lastFilterKeyRef = useRef<string>("");
 
@@ -217,7 +234,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   const [casesOpen, setCasesOpen] = useState(false);
   const [casesMsg, setCasesMsg] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
-  const [reportName, setReportName] = useState("Social Media IP Intelligence Report (CIB/TCSD)");
+  const [reportName, setReportName] = useState("Social Media IP Intelligence Report (ACSC-CIB-TCSD)");
   const [reportMsg, setReportMsg] = useState("");
   const [reportBusy, setReportBusy] = useState(false);
   const [reportHistory, setReportHistory] = useState<Array<{ id: string; report_name: string; generated_by: string; generated_at: string }>>([]);
@@ -254,6 +271,11 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
         });
         const canSkipStats = !forceFull && lastFilterKeyRef.current === filterKey && lastFilterKeyRef.current !== "";
 
+        const colParams: Record<string, string> = {};
+        (Object.keys(colFilters) as ColFilterKey[]).forEach((k) => {
+          if (colFilters[k].length) colParams[`col_${k}`] = colFilters[k].join("||");
+        });
+
         const qs = new URLSearchParams({
           limit: String(limit),
           offset: String(offset),
@@ -270,11 +292,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           ...(dateTo ? { date_to: dateTo } : {}),
           ...(scammerOnly ? { scammer_only: "true" } : {}),
           ...(caseWindowOnly ? { case_window_only: "true" } : {}),
-          ...(colFilters.platform.length ? { col_platform: colFilters.platform.join("||") } : {}),
-          ...(colFilters.team.length ? { col_team: colFilters.team.join("||") } : {}),
-          ...(colFilters.reported_date.length ? { col_reported_date: colFilters.reported_date.join("||") } : {}),
-          ...(colFilters.scammer_case.length ? { col_scammer_case: colFilters.scammer_case.join("||") } : {}),
-          ...(colFilters.meta_type.length ? { col_meta_type: colFilters.meta_type.join("||") } : {}),
+          ...colParams,
         });
         const res = await fetch(`/api/events?${qs.toString()}`, { cache: "no-store" });
         if (res.status === 401) {
@@ -341,10 +359,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
     }
   }
 
-  function handleColFilterChange(
-    key: "platform" | "team" | "reported_date" | "scammer_case" | "meta_type",
-    vals: string[]
-  ) {
+  function handleColFilterChange(key: ColFilterKey, vals: string[]) {
     setOffset(0);
     setColFilters((prev) => ({ ...prev, [key]: vals }));
   }
@@ -450,6 +465,11 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   function handleExportCsv() {
     const qs = buildFilterQuery();
     window.open(`/api/export/csv?${qs.toString()}`, "_blank");
+  }
+
+  function handleExportExcel() {
+    const qs = buildFilterQuery();
+    window.open(`/api/export/excel?${qs.toString()}`, "_blank");
   }
 
   async function openReportModal() {
@@ -613,19 +633,23 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           <div className="flex flex-col items-center text-center gap-3">
             <div className="flex items-center justify-center gap-4">
               <img
-                src="/logos/tcsd-logo.png"
-                alt="TCSD Logo"
-                className="w-16 h-16 object-contain drop-shadow-lg"
+                src="/logos/acsc-logo.png?v=2"
+                alt="ACSC Logo"
+                width={56}
+                height={56}
+                className="w-14 h-14 object-contain rounded-full border-2 border-[#ffd000]/70 bg-white p-0.5 shadow-lg"
               />
               <img
-                src="/logos/acsc-logo.png"
-                alt="ACSC Logo"
-                className="w-14 h-14 object-contain rounded-full border-2 border-[#ffd000]/60 bg-white/95 p-0.5 shadow-lg"
+                src="/logos/tcsd-logo.png?v=2"
+                alt="TCSD Logo"
+                width={64}
+                height={64}
+                className="w-16 h-16 object-contain drop-shadow-lg"
               />
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-widest text-[#ffd000] font-bold">
-                กองบัญชาการตำรวจสอบสวนกลาง (CIB) · TCSD · ACSC
+                ACSC · CIB · TCSD · ตำรวจสอบสวนกลาง
               </p>
               <h1 className="text-xl font-bold text-white mt-1">Social Media IP Analysis V2</h1>
               <p className="text-xs text-blue-200/80 mt-0.5">ระบบวิเคราะห์ข้อมูล IP · TikTok & META</p>
@@ -686,9 +710,21 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   const totalPages = Math.max(1, Math.ceil((data?.pagination.total || 0) / limit));
   const currentPage = Math.floor(offset / limit) + 1;
 
-  const distinctTeams = Array.from(new Set((data?.records || []).map((r) => r.team || "(ว่าง)"))).sort();
-  const distinctDates = Array.from(new Set((data?.records || []).map((r) => r.reported_date || "(ว่าง)"))).sort().reverse();
-  const distinctMetaTypes = Array.from(new Set((data?.records || []).map((r) => r.meta_account_type || "(ว่าง)"))).sort();
+  const tableOpts = {
+    local_date: uniq((data?.records || []).map((r) => r.local_time?.slice(0, 10))),
+    it_no: uniq((data?.records || []).map((r) => r.it_no)),
+    target_id: uniq((data?.records || []).map((r) => r.target_id)),
+    inst_id: uniq((data?.records || []).map((r) => r.inst_id)),
+    tpo_code: uniq((data?.records || []).map((r) => r.tpo_code)),
+    reported_date: uniq((data?.records || []).map((r) => r.reported_date)).reverse(),
+    team: uniq((data?.records || []).map((r) => r.team)),
+    account: uniq((data?.records || []).map((r) => r.account)),
+    meta_type: uniq((data?.records || []).map((r) => r.meta_account_type)),
+    ip: uniq((data?.records || []).map((r) => r.ip)),
+    network: uniq((data?.records || []).map((r) => r.network)),
+    country: uniq((data?.records || []).map((r) => r.country)),
+    letter: uniq((data?.records || []).map((r) => r.letter_number)),
+  };
   const sortIndicator = (col: string) => (sortBy === col ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
   return (
@@ -699,19 +735,23 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div className="flex items-center gap-1.5 shrink-0">
               <img
-                src="/logos/tcsd-logo.png"
-                alt="TCSD"
-                className="w-9 h-9 sm:w-10 sm:h-10 object-contain drop-shadow"
+                src="/logos/acsc-logo.png?v=2"
+                alt="ACSC"
+                width={36}
+                height={36}
+                className="w-8 h-8 sm:w-9 sm:h-9 object-contain rounded-full border border-[#ffd000]/70 bg-white p-0.5"
               />
               <img
-                src="/logos/acsc-logo.png"
-                alt="ACSC"
-                className="w-8 h-8 sm:w-9 sm:h-9 object-contain rounded-full border border-[#ffd000]/70 bg-white/95 p-0.5"
+                src="/logos/tcsd-logo.png?v=2"
+                alt="TCSD"
+                width={40}
+                height={40}
+                className="w-9 h-9 sm:w-10 sm:h-10 object-contain drop-shadow"
               />
             </div>
             <div className="min-w-0">
               <p className="text-[10px] sm:text-[11px] tracking-widest text-[#ffd000] font-bold truncate">
-                CIB · TCSD · ACSC · SOCIAL MEDIA IP ANALYSIS
+                ACSC · CIB · TCSD · SOCIAL MEDIA IP ANALYSIS
               </p>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm sm:text-base font-bold text-white truncate">
@@ -1023,7 +1063,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                 setDateTo("");
                 setScammerOnly(false);
                 setCaseWindowOnly(false);
-                setColFilters({ platform: [], team: [], reported_date: [], scammer_case: [], meta_type: [] });
+                setColFilters(EMPTY_COL_FILTERS);
               }}
               className="ml-auto px-3 py-1.5 rounded-lg bg-[#0f2454] hover:bg-[#163475] border border-[#244894] text-xs text-blue-100"
             >
@@ -1034,28 +1074,50 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
 
         {/* ==================== MODE SWITCHER TABS ==================== */}
         <section className="flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex rounded-xl bg-[#0a1d45] border border-[#1d3a78] p-1 gap-1">
+          <div className="inline-flex flex-wrap rounded-xl bg-[#0a1d45] border border-[#1d3a78] p-1 gap-1">
             <button
               type="button"
               onClick={() => setActiveView("dashboard")}
-              className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 transition ${
+              className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 transition ${
                 activeView === "dashboard"
                   ? "bg-[#ffd000] text-[#05112b] shadow"
                   : "text-blue-200 hover:bg-[#10285e]"
               }`}
             >
-              <LayoutDashboard className="w-4 h-4" /> แดชบอร์ด & รายการเหตุการณ์ IP
+              <LayoutDashboard className="w-4 h-4" /> แดชบอร์ด & IP Events
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("analytics")}
+              className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 transition ${
+                activeView === "analytics"
+                  ? "bg-[#ffd000] text-[#05112b] shadow"
+                  : "text-blue-200 hover:bg-[#10285e]"
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" /> สถิติประเทศ & ISP (Top 10)
             </button>
             <button
               type="button"
               onClick={() => setActiveView("excel")}
-              className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 transition ${
+              className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 transition ${
                 activeView === "excel"
                   ? "bg-[#ffd000] text-[#05112b] shadow"
                   : "text-blue-200 hover:bg-[#10285e]"
               }`}
             >
-              <Table2 className="w-4 h-4" /> จัดการข้อมูลแบบตาราง Excel
+              <Table2 className="w-4 h-4" /> จัดการข้อมูลแบบ Excel
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("scammers")}
+              className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 transition ${
+                activeView === "scammers"
+                  ? "bg-[#ffd000] text-[#05112b] shadow"
+                  : "text-blue-200 hover:bg-[#10285e]"
+              }`}
+            >
+              <ShieldAlert className="w-4 h-4" /> เคส Scammers
             </button>
           </div>
 
@@ -1249,8 +1311,12 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           </>
         )}
 
-        {/* ==================== DATA SECTION: EXCEL MANAGER OR DASHBOARD TABLE ==================== */}
-        {activeView === "excel" ? (
+        {/* ==================== DATA SECTION: 4 VIEWS ==================== */}
+        {activeView === "analytics" ? (
+          <CountryIspStatsView filterQuery={buildFilterQuery().toString()} />
+        ) : activeView === "scammers" ? (
+          <ScammerCasesSheet />
+        ) : activeView === "excel" ? (
           <ExcelManagerView
             records={data?.records || []}
             isAdmin={user.role === "master_admin"}
@@ -1261,6 +1327,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
             onColFilterChange={handleColFilterChange}
             onSaved={() => fetchEvents(true)}
             onExportCsv={handleExportCsv}
+            onExportExcel={handleExportExcel}
           />
         ) : (
           <section className="rounded-xl bg-[#0a1d45] border border-[#1d3a78] overflow-hidden">
@@ -1271,13 +1338,20 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                   รายการเหตุการณ์ IP ({fmt(data?.pagination.total)} รายการ)
                 </h2>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setActiveView("excel")}
                   className="px-3 py-1.5 rounded-lg bg-[#0f2454] hover:bg-[#163475] border border-[#ffd000]/40 text-[#ffd000] text-xs font-semibold flex items-center gap-1.5"
                 >
                   <Table2 className="w-3.5 h-3.5" /> เปิดโหมด Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" /> ส่งออก Excel (.xlsx)
                 </button>
                 <button
                   type="button"
@@ -1356,78 +1430,99 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
               })}
             </div>
 
-            {/* Desktop Table (>= md) with Excel-style Column Filter Popovers */}
+            {/* Desktop Table (>= md) with Excel-style Column Filter Popovers on EVERY column */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead className="bg-[#05112b] text-blue-200 border-b border-[#1d3a78]">
                   <tr>
-                    <th className="px-3 py-3 cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("local_time")}>
-                      <span className="inline-flex items-center gap-1">เวลา UTC+7 <ArrowUpDown className="w-3 h-3" />{sortIndicator("local_time")}</span>
+                    <th className="px-3 py-3">
+                      <div className="inline-flex items-center gap-1">
+                        <span className="cursor-pointer hover:text-[#ffd000] inline-flex items-center gap-1" onClick={() => handleSort("local_time")}>
+                          เวลา UTC+7 <ArrowUpDown className="w-3 h-3" />{sortIndicator("local_time")}
+                        </span>
+                        <ColumnFilterPopover title="วันที่ (UTC+7)" options={tableOpts.local_date} selected={colFilters.local_date} onApply={(v) => handleColFilterChange("local_date", v)} />
+                      </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("platform")}>แพลตฟอร์ม{sortIndicator("platform")}</span>
-                        <ColumnFilterPopover
-                          title="แพลตฟอร์ม"
-                          options={["TikTok", "Facebook", "Instagram"]}
-                          selected={colFilters.platform}
-                          onApply={(v) => handleColFilterChange("platform", v)}
-                        />
+                        <ColumnFilterPopover title="แพลตฟอร์ม" options={["TikTok", "Facebook", "Instagram"]} selected={colFilters.platform} onApply={(v) => handleColFilterChange("platform", v)} />
                       </div>
                     </th>
-                    <th className="px-3 py-3 cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("it_no")}>IT No.{sortIndicator("it_no")}</th>
-                    <th className="px-3 py-3 cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("target_id")}>Target ID{sortIndicator("target_id")}</th>
-                    <th className="px-3 py-3 cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("inst_id")}>INST ID{sortIndicator("inst_id")}</th>
-                    <th className="px-3 py-3 cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("tpo_code")}>TPO code{sortIndicator("tpo_code")}</th>
+                    <th className="px-3 py-3">
+                      <div className="inline-flex items-center gap-1">
+                        <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("it_no")}>IT No.{sortIndicator("it_no")}</span>
+                        <ColumnFilterPopover title="IT No." options={tableOpts.it_no} selected={colFilters.it_no} onApply={(v) => handleColFilterChange("it_no", v)} />
+                      </div>
+                    </th>
+                    <th className="px-3 py-3">
+                      <div className="inline-flex items-center gap-1">
+                        <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("target_id")}>Target ID{sortIndicator("target_id")}</span>
+                        <ColumnFilterPopover title="Target ID" options={tableOpts.target_id} selected={colFilters.target_id} onApply={(v) => handleColFilterChange("target_id", v)} />
+                      </div>
+                    </th>
+                    <th className="px-3 py-3">
+                      <div className="inline-flex items-center gap-1">
+                        <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("inst_id")}>INST ID{sortIndicator("inst_id")}</span>
+                        <ColumnFilterPopover title="INST ID" options={tableOpts.inst_id} selected={colFilters.inst_id} onApply={(v) => handleColFilterChange("inst_id", v)} />
+                      </div>
+                    </th>
+                    <th className="px-3 py-3">
+                      <div className="inline-flex items-center gap-1">
+                        <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("tpo_code")}>TPO code{sortIndicator("tpo_code")}</span>
+                        <ColumnFilterPopover title="TPO code" options={tableOpts.tpo_code} selected={colFilters.tpo_code} onApply={(v) => handleColFilterChange("tpo_code", v)} />
+                      </div>
+                    </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>เคส Scammer</span>
-                        <ColumnFilterPopover
-                          title="เคส Scammer"
-                          options={["Scammer", "(ว่าง)"]}
-                          selected={colFilters.scammer_case}
-                          onApply={(v) => handleColFilterChange("scammer_case", v)}
-                        />
+                        <ColumnFilterPopover title="เคส Scammer" options={["Scammer", "(ว่าง)"]} selected={colFilters.scammer_case} onApply={(v) => handleColFilterChange("scammer_case", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>วันที่รับแจ้ง</span>
-                        <ColumnFilterPopover
-                          title="วันที่รับแจ้ง"
-                          options={distinctDates}
-                          selected={colFilters.reported_date}
-                          onApply={(v) => handleColFilterChange("reported_date", v)}
-                        />
+                        <ColumnFilterPopover title="วันที่รับแจ้ง" options={tableOpts.reported_date} selected={colFilters.reported_date} onApply={(v) => handleColFilterChange("reported_date", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>ทีม</span>
-                        <ColumnFilterPopover
-                          title="ทีม"
-                          options={distinctTeams}
-                          selected={colFilters.team}
-                          onApply={(v) => handleColFilterChange("team", v)}
-                        />
+                        <ColumnFilterPopover title="ทีม" options={tableOpts.team} selected={colFilters.team} onApply={(v) => handleColFilterChange("team", v)} />
                       </div>
                     </th>
-                    <th className="px-3 py-3 cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("account")}>บัญชี / ประเภท{sortIndicator("account")}</th>
+                    <th className="px-3 py-3">
+                      <div className="inline-flex items-center gap-1">
+                        <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("account")}>บัญชี / ประเภท{sortIndicator("account")}</span>
+                        <ColumnFilterPopover title="บัญชี" options={tableOpts.account} selected={colFilters.account} onApply={(v) => handleColFilterChange("account", v)} />
+                      </div>
+                    </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>ประเภทบัญชี Meta</span>
-                        <ColumnFilterPopover
-                          title="ประเภทบัญชี Meta"
-                          options={distinctMetaTypes}
-                          selected={colFilters.meta_type}
-                          onApply={(v) => handleColFilterChange("meta_type", v)}
-                        />
+                        <ColumnFilterPopover title="ประเภทบัญชี Meta" options={tableOpts.meta_type} selected={colFilters.meta_type} onApply={(v) => handleColFilterChange("meta_type", v)} />
                       </div>
                     </th>
-                    <th className="px-3 py-3">IP / Port</th>
-                    <th className="px-3 py-3">เครือข่าย / ประเทศ</th>
+                    <th className="px-3 py-3">
+                      <div className="inline-flex items-center gap-1">
+                        <span>IP / Port</span>
+                        <ColumnFilterPopover title="IP" options={tableOpts.ip} selected={colFilters.ip} onApply={(v) => handleColFilterChange("ip", v)} />
+                      </div>
+                    </th>
+                    <th className="px-3 py-3">
+                      <div className="inline-flex items-center gap-1">
+                        <span>เครือข่าย / ประเทศ</span>
+                        <ColumnFilterPopover title="เครือข่าย" options={tableOpts.network} selected={colFilters.network} onApply={(v) => handleColFilterChange("network", v)} />
+                        <ColumnFilterPopover title="ประเทศ" options={tableOpts.country} selected={colFilters.country} onApply={(v) => handleColFilterChange("country", v)} />
+                      </div>
+                    </th>
                     <th className="px-3 py-3">สถานะหนังสือ</th>
-                    <th className="px-3 py-3">เลขหนังสือ</th>
+                    <th className="px-3 py-3">
+                      <div className="inline-flex items-center gap-1">
+                        <span>เลขหนังสือ</span>
+                        <ColumnFilterPopover title="เลขหนังสือ" options={tableOpts.letter} selected={colFilters.letter} onApply={(v) => handleColFilterChange("letter", v)} />
+                      </div>
+                    </th>
                     {user.role === "master_admin" && <th className="px-3 py-3">จัดการ</th>}
                   </tr>
                 </thead>

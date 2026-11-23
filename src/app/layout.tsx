@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Social Media IP Analysis · CIB / TCSD / ACSC",
-  description: "ระบบวิเคราะห์ข้อมูลบัญชี เหตุการณ์ และเครือข่าย IP จาก TikTok, Facebook และ Instagram — ตำรวจสอบสวนกลาง (CIB / TCSD / ACSC)",
+  title: "Social Media IP Analysis · ACSC · CIB · TCSD",
+  description: "ระบบวิเคราะห์ข้อมูลบัญชี เหตุการณ์ และเครือข่าย IP จาก TikTok, Facebook และ Instagram — ACSC · CIB · TCSD",
 };
 
 export const viewport: Viewport = {

@@ -10,13 +10,14 @@
 - **เทคโนโลยีหลัก**: Next.js 15 (App Router, TypeScript) + Tailwind CSS + MySQL 8.0 / TiDB Cloud Serverless
 - **สถานะปัจจุบัน**:
   - **Deploy ขึ้น Production เรียบร้อยแล้ว** (Vercel + TiDB Cloud Serverless 100% Free Tier)
-  - **ธีม & แบรนด์ตำรวจสอบสวนกลาง (CIB)**: ธีมสีน้ำเงินเข้ม-เหลืองทอง (`#05112b` / `#ffd000`) พร้อมโลโก้ **TCSD** (`/logos/tcsd-logo.png`) และ **ACSC** (`/logos/acsc-logo.png`)
-  - **แดชบอร์ดครบถ้วนเทียบเท่าระบบเดิม**: แถบสถานะข้อมูล, 5 KPI Cards, 2 Request Coverage Cards (`สรุปตามบัญชี Account` + `สรุปตามเคส TPO`), 3 Visual Cards (`Network Distribution`, `Country Signal Donut Chart`, `Request Tracking 5 แถบ`), ตัวกรองหัวคอลัมน์แบบ Excel Popover
-  - **หน้าจัดการข้อมูลแบบตาราง Excel (`ExcelManagerView`)**: แก้ไขข้อมูลในเซลล์ได้โดยตรง (Inline Edit), เลือกหลายแถวเพื่อกำหนดสถานะ/เลขหนังสือพร้อมกัน (Bulk Apply via `/api/events/bulk`), เรียงคอลัมน์, กรองหัวคอลัมน์แบบ Excel, คัดลอกวางลง Microsoft Excel (Ctrl+V) ได้ทันที
-  - **ระบบอัปโหลด ZIP (META & TikTok แยกชัดเจน)**: เลือกแท็บ `META ZIP`, `TikTok ZIP` หรือ `ตรวจจับอัตโนมัติ`, จับคู่เคส Scammer อัตโนมัติ, ดึง RDAP อัตโนมัติ และ Insert แบบ Chunked ลง TiDB Cloud
-  - **Performance & Mobile Responsive**: Subquery-first PK pagination (เร็วขึ้น ~14 เท่า), `Promise.all`, 60s Cache + `skip_stats=1`, Search debounce 350ms, Mobile Menu Drawer + Card List
-  - Unit Tests: 6/6 ผ่าน (ทดสอบกับไฟล์จริง META 5 ZIP + TikTok 5 ZIP + Scammer Excel)
-  - ข้อมูลระบบเดิมทั้งหมด (608,636 รายการ) ย้ายขึ้น TiDB Cloud เรียบร้อย 100%
+  - **ธีม & แบรนด์ตำรวจสอบสวนกลาง (`ACSC · CIB · TCSD`)**: ธีมสีน้ำเงินเข้ม-เหลืองทอง (`#05112b` / `#ffd000`) โลโก้เรียง **ACSC** (`/logos/acsc-logo.png`) ➔ **TCSD** (`/logos/tcsd-logo.png`)
+  - **ครบทั้ง 4 โหมด/แท็บหลัก**:
+    1. `แดชบอร์ด & IP Events`: 5 KPI Cards, 2 Request Coverage Cards, 3 Visual Cards (Donut + Tracking), ตารางพร้อมตัวกรองหัวคอลัมน์แบบ Excel ทุกคอลัมน์
+    2. `สถิติประเทศ & ISP (Top 10)` (`/api/analytics` + `CountryIspStatsView`): กราฟ 4 แผง (IP Event & Case ID แยกประเทศพร้อมโดนัท Thailand vs Foreign + Top 10 ISP ที่รวมชื่อเครือข่ายเดียวกันเช่น ReadyIDC และแยก AIS Mobile vs AIS Fibre พร้อมแยกรหัส Case ID ที่คั่นด้วย `/`)
+    3. `จัดการข้อมูลแบบ Excel` (`ExcelManagerView`): แสดงครบทุกคอลัมน์จากฐานข้อมูลเดิม (รวม UTC, Page Admin, Meta Actor, Owner, From-To IP, Source ZIP/PDF), ตัวกรองหัวคอลัมน์ทุกคอลัมน์, Inline Edit + Bulk Apply, **ส่งออก Excel ที่กรอง (.xlsx)** (`/api/export/excel`) และ **นำเข้า Excel อัปเดตลงฐานข้อมูลอัตโนมัติ** (`/api/events/import-excel`)
+    4. `เคส Scammers` (`ScammerCasesSheet` + `/api/cases`): ชีทแยก 989 เคส โครงสร้างตรงกับ `url_cases_(Scammer).xlsx` 100% พร้อมส่งออก `.xlsx`
+  - **ระบบอัปโหลด ZIP (META & TikTok แยกชัดเจน)**: แยกแท็บ META / TikTok / Auto, จับคู่ Scammer & RDAP อัตโนมัติ
+  - Unit Tests: 6/6 ผ่าน · ข้อมูลเดิม 608,636 รายการ (ครบ 58 คอลัมน์) + 989 เคส บน TiDB Cloud 100%
 
 ---
 

@@ -7,6 +7,7 @@
 ## 1. ข้อมูลภาพรวม (Overview)
 - **Production URL (Vercel)**: `https://social-media-ip-analysis-one.vercel.app`
 - **Repo GitHub**: [`mpboonchai/Social-Media-IP-Analysis`](https://github.com/mpboonchai/Social-Media-IP-Analysis) (Branch: `main`)
+- **Google Drive Project Folder**: `https://drive.google.com/drive/folders/1wEc9RQ6P8uJklTYse1R-dy20x45QJ-Yb` (Master Workbook: `Social_Media_IP_Analysis.xlsx` — 6 ชีท, 608,636 IP Events, 101,386 Unique IPs, 989 Cases — ยืนยันตรงกับ TiDB Cloud 100%)
 - **เทคโนโลยีหลัก**: Next.js 15 (App Router, TypeScript) + Tailwind CSS + MySQL 8.0 / TiDB Cloud Serverless
 - **สถานะปัจจุบัน**:
   - **Deploy ขึ้น Production เรียบร้อยแล้ว** (Vercel + TiDB Cloud Serverless 100% Free Tier)

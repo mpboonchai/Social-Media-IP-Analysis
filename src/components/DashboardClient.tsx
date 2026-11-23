@@ -227,6 +227,8 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
       parser_used: string;
       status: string;
       records: number;
+      inserted_new?: number;
+      skipped_duplicates?: number;
       unique_ips: number;
       scammer_matched: number;
       error?: string;
@@ -1807,7 +1809,17 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                       </span>
                     </div>
                     <div className="text-blue-300">
-                      ตัวอ่าน: {r.parser_used} · {fmt(r.records)} รายการ · {fmt(r.unique_ips)} IP · จับคู่เคส Scammer: {fmt(r.scammer_matched)}
+                      ตัวอ่าน: {r.parser_used} · อ่านได้ {fmt(r.records)} รายการ
+                      {r.status === "processed" && (
+                        <>
+                          {" · "}
+                          <span className="text-emerald-300 font-semibold">เพิ่มใหม่ {fmt(r.inserted_new)}</span>
+                          {" · "}
+                          <span className="text-amber-300">ซ้ำ (ข้าม) {fmt(r.skipped_duplicates)}</span>
+                        </>
+                      )}
+                      {" · "}
+                      {fmt(r.unique_ips)} IP · เคส Scammer: {fmt(r.scammer_matched)}
                     </div>
                     {r.error && <div className="text-rose-400">{r.error}</div>}
                   </div>

@@ -110,6 +110,8 @@ export async function POST(req: NextRequest) {
     parser_used: string;
     status: string;
     records: number;
+    inserted_new?: number;
+    skipped_duplicates?: number;
     unique_ips: number;
     scammer_matched: number;
     error?: string;
@@ -280,9 +282,11 @@ export async function POST(req: NextRequest) {
       }
 
       // Chunked insert (1,000 rows per batch) for TiDB Serverless reliability
+      // INSERT IGNORE skips duplicate record_key rows and only inserts new unique events
+      let insertedNew = 0;
       for (let i = 0; i < values.length; i += 1000) {
         const chunk = values.slice(i, i + 1000);
-        await pool.query(
+        const [insRes] = await pool.query<mysql.ResultSetHeader>(
           `INSERT IGNORE INTO ip_events (
              record_key, upload_batch_id, account_id, rdap_network_id, platform, event_type,
              event_utc, event_local, ip_bin, ip_version, port, ip_type, page_admin,
@@ -291,11 +295,13 @@ export async function POST(req: NextRequest) {
            ) VALUES ?`,
           [chunk]
         );
+        insertedNew += Number(insRes.affectedRows || 0);
       }
+      const skippedDuplicates = Math.max(0, parsed.length - insertedNew);
 
       await pool.execute(
         `UPDATE upload_batches SET import_status = 'processed', record_count = ?, completed_at = NOW() WHERE id = ?`,
-        [parsed.length, batchId]
+        [insertedNew, batchId]
       );
       summary.push({
         filename: file.name,
@@ -303,6 +309,8 @@ export async function POST(req: NextRequest) {
         parser_used: parserUsed,
         status: "processed",
         records: parsed.length,
+        inserted_new: insertedNew,
+        skipped_duplicates: skippedDuplicates,
         unique_ips: uniqueIps.length,
         scammer_matched: matchedCases.length,
       });

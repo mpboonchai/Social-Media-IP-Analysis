@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
-import { Shield, Upload, FileSpreadsheet, LogOut, RefreshCw, Search, Edit3, X, Download, Presentation, ArrowLeftRight, Users, CheckCircle2 } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Shield, Upload, FileSpreadsheet, LogOut, RefreshCw, Search, Edit3, X, Download, Presentation, ArrowLeftRight, Users, CheckCircle2, Menu } from "lucide-react";
 import type { SessionUser } from "@/lib/auth";
 
 interface IpEventRow {
@@ -77,10 +77,12 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [offset, setOffset] = useState(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const limit = 25;
 
   // Filters
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [platform, setPlatform] = useState("");
   const [eventType, setEventType] = useState("");
   const [requestStatus, setRequestStatus] = useState("");
@@ -88,6 +90,15 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   const [dateTo, setDateTo] = useState("");
   const [scammerOnly, setScammerOnly] = useState(false);
   const [caseWindowOnly, setCaseWindowOnly] = useState(false);
+
+  const lastFilterKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   // Modals
   const [editing, setEditing] = useState<IpEventRow | null>(null);
@@ -121,14 +132,27 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   const [completeReason, setCompleteReason] = useState("ได้รับข้อมูลบัญชีครบถ้วนแล้ว ไม่ต้องขอข้อมูล IP เพิ่ม");
   const [completeMsg, setCompleteMsg] = useState("");
 
-  const fetchEvents = useCallback(async () => {
+  const fetchEvents = useCallback(async (forceFull = false) => {
     if (!user) return;
     setLoading(true);
     try {
+      const filterKey = JSON.stringify({
+        debouncedSearch,
+        platform,
+        eventType,
+        requestStatus,
+        dateFrom,
+        dateTo,
+        scammerOnly,
+        caseWindowOnly,
+      });
+      const canSkipStats = !forceFull && lastFilterKeyRef.current === filterKey && lastFilterKeyRef.current !== "";
+
       const qs = new URLSearchParams({
         limit: String(limit),
         offset: String(offset),
-        ...(search ? { search } : {}),
+        ...(canSkipStats ? { skip_stats: "1" } : {}),
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
         ...(platform ? { platform } : {}),
         ...(eventType ? { event_type: eventType } : {}),
         ...(requestStatus ? { request_status: requestStatus } : {}),
@@ -143,15 +167,33 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
         return;
       }
       if (res.ok) {
-        setData(await res.json());
+        const json = await res.json();
+        if (json.stats_skipped) {
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  records: json.records,
+                  pagination: {
+                    ...prev.pagination,
+                    limit: json.pagination.limit,
+                    offset: json.pagination.offset,
+                  },
+                }
+              : prev
+          );
+        } else {
+          lastFilterKeyRef.current = filterKey;
+          setData(json);
+        }
       }
     } finally {
       setLoading(false);
     }
-  }, [user, offset, search, platform, eventType, requestStatus, dateFrom, dateTo, scammerOnly, caseWindowOnly]);
+  }, [user, offset, debouncedSearch, platform, eventType, requestStatus, dateFrom, dateTo, scammerOnly, caseWindowOnly]);
 
   useEffect(() => {
-    fetchEvents();
+    fetchEvents(false);
   }, [fetchEvents]);
 
   async function handleLogin(e: React.FormEvent) {
@@ -196,7 +238,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
     });
     if (res.ok) {
       setEditing(null);
-      fetchEvents();
+      fetchEvents(true);
     }
   }
 
@@ -214,7 +256,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
       setUploadMsg(
         `นำเข้าสำเร็จ: ${body.results.map((r: any) => `${r.filename} (${r.status}: ${r.records})`).join(", ")}`
       );
-      fetchEvents();
+      fetchEvents(true);
     } else {
       setUploadMsg(`ผิดพลาด: ${body.error}`);
     }
@@ -382,7 +424,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
       return;
     }
     setCompleteMsg(`ปิดงานบัญชี ${body.account} สำเร็จ (อัปเดต ${fmt(body.updated_records)} รายการ)`);
-    fetchEvents();
+    fetchEvents(true);
   }
 
   if (!user) {
@@ -443,98 +485,190 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
 
   return (
     <div className="min-h-screen bg-[#081521] text-slate-100">
-      <header className="border-b border-[#1e3b4f] bg-[#0c1f2e]/90 backdrop-blur sticky top-0 z-20 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-[#35d0ba]/15 border border-[#35d0ba]/40 flex items-center justify-center text-[#35d0ba] font-bold">
-            IP
+      <header className="border-b border-[#1e3b4f] bg-[#0c1f2e]/95 backdrop-blur sticky top-0 z-30">
+        <div className="px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-lg bg-[#35d0ba]/15 border border-[#35d0ba]/40 flex items-center justify-center text-[#35d0ba] font-bold text-sm">
+              IP
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] sm:text-[11px] tracking-widest text-[#35d0ba] font-semibold truncate">SOCIAL MEDIA IP ANALYSIS V2</p>
+              <h1 className="text-sm sm:text-base font-bold text-white truncate">
+                Full MySQL Analytics <span className="text-slate-300 font-normal">({fmt(kpi?.total_events)})</span>
+              </h1>
+            </div>
           </div>
-          <div>
-            <p className="text-[11px] tracking-widest text-[#35d0ba] font-semibold">SOCIAL MEDIA IP ANALYSIS V2</p>
-            <h1 className="text-base font-bold text-white">Full MySQL Analytics ({fmt(kpi?.total_events)} รายการ)</h1>
+
+          {/* Mobile quick controls */}
+          <div className="flex lg:hidden items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => fetchEvents(true)}
+              className="p-2 rounded-lg bg-[#122b3e] hover:bg-[#193b54] border border-[#244c68] text-slate-200"
+              aria-label="รีเฟรช"
+              title="รีเฟรช"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            </button>
+            <button
+              onClick={() => setMobileMenuOpen((v) => !v)}
+              className="px-2.5 py-2 rounded-lg bg-[#122b3e] hover:bg-[#193b54] border border-[#244c68] text-slate-200 flex items-center gap-1.5 text-xs font-medium"
+              aria-label="เมนู"
+            >
+              {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              <span>เมนู</span>
+            </button>
+          </div>
+
+          {/* Desktop toolbar */}
+          <div className="hidden lg:flex flex-wrap items-center justify-end gap-2 text-xs xl:text-sm">
+            <span className="px-3 py-1 rounded-full bg-[#081521] border border-[#1e3b4f] text-slate-300">
+              {user.display_name} · {user.role === "master_admin" ? "Master Admin" : "Viewer"}
+            </span>
+            <button
+              onClick={() => fetchEvents(true)}
+              className="px-3 py-1.5 rounded-lg bg-[#122b3e] hover:bg-[#193b54] border border-[#244c68] flex items-center gap-1.5"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> รีเฟรช
+            </button>
+            <button
+              onClick={handleExportCsv}
+              className="px-3 py-1.5 rounded-lg bg-[#122b3e] hover:bg-[#193b54] border border-[#244c68] text-slate-200 flex items-center gap-1.5"
+            >
+              <Download className="w-4 h-4" /> ส่งออก CSV (3 ชุด)
+            </button>
+            <button
+              onClick={openReportModal}
+              className="px-3 py-1.5 rounded-lg bg-indigo-950/70 hover:bg-indigo-900/70 border border-indigo-400/40 text-indigo-200 flex items-center gap-1.5"
+            >
+              <Presentation className="w-4 h-4" /> รายงาน 17 สไลด์
+            </button>
+            {user.role === "master_admin" && (
+              <>
+                <button
+                  onClick={openUsersModal}
+                  className="px-3 py-1.5 rounded-lg bg-[#122b3e] hover:bg-[#193b54] border border-[#244c68] text-slate-200 flex items-center gap-1.5"
+                >
+                  <Users className="w-4 h-4" /> จัดการผู้ใช้
+                </button>
+                <button
+                  onClick={openCompleteModal}
+                  className="px-3 py-1.5 rounded-lg bg-teal-950/60 hover:bg-teal-900/60 border border-teal-400/40 text-teal-200 flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> ปิดงานบัญชี
+                </button>
+                <button
+                  onClick={handleRequestSync}
+                  className="px-3 py-1.5 rounded-lg bg-amber-950/50 hover:bg-amber-900/50 border border-amber-400/40 text-amber-200 flex items-center gap-1.5"
+                >
+                  <ArrowLeftRight className="w-4 h-4" /> ซิงค์สามทาง
+                </button>
+                <button
+                  onClick={() => { setUploadMsg(""); setUploadOpen(true); }}
+                  className="px-3 py-1.5 rounded-lg bg-[#35d0ba]/15 hover:bg-[#35d0ba]/25 border border-[#35d0ba]/40 text-[#35d0ba] flex items-center gap-1.5"
+                >
+                  <Upload className="w-4 h-4" /> อัปโหลด ZIP
+                </button>
+                <button
+                  onClick={() => { setCasesMsg(""); setCasesOpen(true); }}
+                  className="px-3 py-1.5 rounded-lg bg-[#4aa8ff]/15 hover:bg-[#4aa8ff]/25 border border-[#4aa8ff]/40 text-[#4aa8ff] flex items-center gap-1.5"
+                >
+                  <FileSpreadsheet className="w-4 h-4" /> นำเข้า Scammer Excel
+                </button>
+              </>
+            )}
+            <button
+              onClick={handleLogout}
+              className="px-3 py-1.5 rounded-lg bg-rose-950/50 hover:bg-rose-900/50 border border-rose-500/30 text-rose-300 flex items-center gap-1.5"
+            >
+              <LogOut className="w-4 h-4" /> ออก
+            </button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="px-3 py-1 rounded-full bg-[#081521] border border-[#1e3b4f] text-slate-300">
-            {user.display_name} · {user.role === "master_admin" ? "Master Admin" : "Viewer"}
-          </span>
-          <button
-            onClick={fetchEvents}
-            className="px-3 py-1.5 rounded-lg bg-[#122b3e] hover:bg-[#193b54] border border-[#244c68] flex items-center gap-1.5"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> รีเฟรช
-          </button>
-          <button
-            onClick={handleExportCsv}
-            className="px-3 py-1.5 rounded-lg bg-[#122b3e] hover:bg-[#193b54] border border-[#244c68] text-slate-200 flex items-center gap-1.5"
-          >
-            <Download className="w-4 h-4" /> ส่งออก CSV (3 ชุด)
-          </button>
-          <button
-            onClick={openReportModal}
-            className="px-3 py-1.5 rounded-lg bg-indigo-950/70 hover:bg-indigo-900/70 border border-indigo-400/40 text-indigo-200 flex items-center gap-1.5"
-          >
-            <Presentation className="w-4 h-4" /> รายงาน 17 สไลด์
-          </button>
-          {user.role === "master_admin" && (
-            <>
+
+        {/* Mobile / Tablet Collapsible Action Drawer */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden border-t border-[#1e3b4f] bg-[#091926] px-3 py-3 space-y-2.5 text-xs">
+            <div className="flex items-center justify-between text-slate-300 pb-1 border-b border-[#1e3b4f]/60">
+              <span>ผู้ใช้: <strong className="text-white">{user.display_name}</strong></span>
+              <span className="px-2 py-0.5 rounded-full bg-[#122b3e] text-[#35d0ba]">
+                {user.role === "master_admin" ? "Master Admin" : "Viewer"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <button
-                onClick={openUsersModal}
-                className="px-3 py-1.5 rounded-lg bg-[#122b3e] hover:bg-[#193b54] border border-[#244c68] text-slate-200 flex items-center gap-1.5"
+                onClick={() => { setMobileMenuOpen(false); handleExportCsv(); }}
+                className="px-3 py-2 rounded-lg bg-[#122b3e] border border-[#244c68] text-slate-200 flex items-center justify-center gap-1.5"
               >
-                <Users className="w-4 h-4" /> จัดการผู้ใช้
+                <Download className="w-4 h-4 shrink-0" /> ส่งออก CSV
               </button>
               <button
-                onClick={openCompleteModal}
-                className="px-3 py-1.5 rounded-lg bg-teal-950/60 hover:bg-teal-900/60 border border-teal-400/40 text-teal-200 flex items-center gap-1.5"
+                onClick={() => { setMobileMenuOpen(false); openReportModal(); }}
+                className="px-3 py-2 rounded-lg bg-indigo-950/70 border border-indigo-400/40 text-indigo-200 flex items-center justify-center gap-1.5"
               >
-                <CheckCircle2 className="w-4 h-4" /> ปิดงานบัญชี
+                <Presentation className="w-4 h-4 shrink-0" /> รายงาน PPTX
               </button>
+              {user.role === "master_admin" && (
+                <>
+                  <button
+                    onClick={() => { setMobileMenuOpen(false); openUsersModal(); }}
+                    className="px-3 py-2 rounded-lg bg-[#122b3e] border border-[#244c68] text-slate-200 flex items-center justify-center gap-1.5"
+                  >
+                    <Users className="w-4 h-4 shrink-0" /> จัดการผู้ใช้
+                  </button>
+                  <button
+                    onClick={() => { setMobileMenuOpen(false); openCompleteModal(); }}
+                    className="px-3 py-2 rounded-lg bg-teal-950/60 border border-teal-400/40 text-teal-200 flex items-center justify-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-4 h-4 shrink-0" /> ปิดงานบัญชี
+                  </button>
+                  <button
+                    onClick={() => { setMobileMenuOpen(false); handleRequestSync(); }}
+                    className="px-3 py-2 rounded-lg bg-amber-950/50 border border-amber-400/40 text-amber-200 flex items-center justify-center gap-1.5"
+                  >
+                    <ArrowLeftRight className="w-4 h-4 shrink-0" /> ซิงค์สามทาง
+                  </button>
+                  <button
+                    onClick={() => { setMobileMenuOpen(false); setUploadMsg(""); setUploadOpen(true); }}
+                    className="px-3 py-2 rounded-lg bg-[#35d0ba]/15 border border-[#35d0ba]/40 text-[#35d0ba] flex items-center justify-center gap-1.5"
+                  >
+                    <Upload className="w-4 h-4 shrink-0" /> อัปโหลด ZIP
+                  </button>
+                  <button
+                    onClick={() => { setMobileMenuOpen(false); setCasesMsg(""); setCasesOpen(true); }}
+                    className="px-3 py-2 rounded-lg bg-[#4aa8ff]/15 border border-[#4aa8ff]/40 text-[#4aa8ff] flex items-center justify-center gap-1.5"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 shrink-0" /> นำเข้า Excel
+                  </button>
+                </>
+              )}
               <button
-                onClick={handleRequestSync}
-                className="px-3 py-1.5 rounded-lg bg-amber-950/50 hover:bg-amber-900/50 border border-amber-400/40 text-amber-200 flex items-center gap-1.5"
+                onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
+                className="px-3 py-2 rounded-lg bg-rose-950/50 border border-rose-500/30 text-rose-300 flex items-center justify-center gap-1.5"
               >
-                <ArrowLeftRight className="w-4 h-4" /> ซิงค์สามทาง
+                <LogOut className="w-4 h-4 shrink-0" /> ออกจากระบบ
               </button>
-              <button
-                onClick={() => { setUploadMsg(""); setUploadOpen(true); }}
-                className="px-3 py-1.5 rounded-lg bg-[#35d0ba]/15 hover:bg-[#35d0ba]/25 border border-[#35d0ba]/40 text-[#35d0ba] flex items-center gap-1.5"
-              >
-                <Upload className="w-4 h-4" /> อัปโหลด ZIP
-              </button>
-              <button
-                onClick={() => { setCasesMsg(""); setCasesOpen(true); }}
-                className="px-3 py-1.5 rounded-lg bg-[#4aa8ff]/15 hover:bg-[#4aa8ff]/25 border border-[#4aa8ff]/40 text-[#4aa8ff] flex items-center gap-1.5"
-              >
-                <FileSpreadsheet className="w-4 h-4" /> นำเข้า Scammer Excel
-              </button>
-            </>
-          )}
-          <button
-            onClick={handleLogout}
-            className="px-3 py-1.5 rounded-lg bg-rose-950/50 hover:bg-rose-900/50 border border-rose-500/30 text-rose-300 flex items-center gap-1.5"
-          >
-            <LogOut className="w-4 h-4" /> ออก
-          </button>
-        </div>
+            </div>
+          </div>
+        )}
       </header>
 
-      <main className="max-w-[1600px] mx-auto p-6 space-y-6">
+      <main className="max-w-[1600px] mx-auto p-3 sm:p-4 lg:p-6 space-y-4 sm:space-y-6">
         {/* Filter Bar */}
-        <section className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-4 grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-3 text-sm">
-          <div className="md:col-span-2 relative">
+        <section className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5 sm:gap-3 text-sm">
+          <div className="sm:col-span-2 relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
             <input
               type="search"
-              placeholder="ค้นหา บัญชี, IP, TPO code, INST ID, ISP, เลขหนังสือ..."
+              placeholder="ค้นหา บัญชี, IP, TPO, INST, ISP, เลขหนังสือ..."
               value={search}
               onChange={(e) => { setOffset(0); setSearch(e.target.value); }}
-              className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#081521] border border-[#1e3b4f] text-white"
+              className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#081521] border border-[#1e3b4f] text-white text-sm"
             />
           </div>
           <select
             value={platform}
             onChange={(e) => { setOffset(0); setPlatform(e.target.value); }}
-            className="rounded-lg bg-[#081521] border border-[#1e3b4f] px-3 py-2"
+            className="rounded-lg bg-[#081521] border border-[#1e3b4f] px-3 py-2 text-sm"
           >
             <option value="">ทุกแพลตฟอร์ม</option>
             <option value="TikTok">TikTok</option>
@@ -545,7 +679,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           <select
             value={eventType}
             onChange={(e) => { setOffset(0); setEventType(e.target.value); }}
-            className="rounded-lg bg-[#081521] border border-[#1e3b4f] px-3 py-2"
+            className="rounded-lg bg-[#081521] border border-[#1e3b4f] px-3 py-2 text-sm"
           >
             <option value="">ทุกประเภทเหตุการณ์</option>
             <option value="IP Address">IP Address</option>
@@ -557,7 +691,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           <select
             value={requestStatus}
             onChange={(e) => { setOffset(0); setRequestStatus(e.target.value); }}
-            className="rounded-lg bg-[#081521] border border-[#1e3b4f] px-3 py-2"
+            className="rounded-lg bg-[#081521] border border-[#1e3b4f] px-3 py-2 text-sm"
           >
             <option value="">ทุกสถานะหนังสือ</option>
             <option value="pending">ยังไม่ดำเนินการ</option>
@@ -569,17 +703,19 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           </select>
           <input
             type="date"
+            aria-label="ตั้งแต่วันที่"
             value={dateFrom}
             onChange={(e) => { setOffset(0); setDateFrom(e.target.value); }}
-            className="rounded-lg bg-[#081521] border border-[#1e3b4f] px-3 py-2"
+            className="rounded-lg bg-[#081521] border border-[#1e3b4f] px-3 py-2 text-sm"
           />
           <input
             type="date"
+            aria-label="ถึงวันที่"
             value={dateTo}
             onChange={(e) => { setOffset(0); setDateTo(e.target.value); }}
-            className="rounded-lg bg-[#081521] border border-[#1e3b4f] px-3 py-2"
+            className="rounded-lg bg-[#081521] border border-[#1e3b4f] px-3 py-2 text-sm"
           />
-          <div className="md:col-span-4 lg:col-span-7 flex flex-wrap items-center gap-4 pt-1">
+          <div className="sm:col-span-2 md:col-span-4 lg:col-span-7 flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-xs sm:text-sm">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -598,7 +734,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
             </label>
             <button
               onClick={() => {
-                setOffset(0); setSearch(""); setPlatform(""); setEventType("");
+                setOffset(0); setSearch(""); setDebouncedSearch(""); setPlatform(""); setEventType("");
                 setRequestStatus(""); setDateFrom(""); setDateTo("");
                 setScammerOnly(false); setCaseWindowOnly(false);
               }}
@@ -610,69 +746,137 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
         </section>
 
         {/* KPI Grid */}
-        <section className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <div className="rounded-xl bg-[#0c1f2e] border border-[#35d0ba]/40 p-4">
+        <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="col-span-2 sm:col-span-1 rounded-xl bg-[#0c1f2e] border border-[#35d0ba]/40 p-3.5 sm:p-4">
             <p className="text-xs text-slate-400">เหตุการณ์ที่ตรงเงื่อนไข</p>
-            <p className="text-2xl font-bold text-[#35d0ba] mt-1">{fmt(kpi?.total_events)}</p>
+            <p className="text-xl sm:text-2xl font-bold text-[#35d0ba] mt-1">{fmt(kpi?.total_events)}</p>
             <p className="text-xs text-slate-500 mt-1">Scammer: {fmt(kpi?.scammer_events)}</p>
           </div>
-          <div className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-4">
+          <div className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-3.5 sm:p-4">
             <p className="text-xs text-slate-400">บัญชีที่เกี่ยวข้อง</p>
-            <p className="text-2xl font-bold text-white mt-1">{fmt(kpi?.unique_accounts)}</p>
+            <p className="text-xl sm:text-2xl font-bold text-white mt-1">{fmt(kpi?.unique_accounts)}</p>
             <p className="text-xs text-slate-500 mt-1">บัญชีไม่ซ้ำ</p>
           </div>
-          <div className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-4">
+          <div className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-3.5 sm:p-4">
             <p className="text-xs text-slate-400">IP ไม่ซ้ำทั้งหมด</p>
-            <p className="text-2xl font-bold text-[#4aa8ff] mt-1">{fmt(kpi?.unique_ips)}</p>
+            <p className="text-xl sm:text-2xl font-bold text-[#4aa8ff] mt-1">{fmt(kpi?.unique_ips)}</p>
             <p className="text-xs text-slate-500 mt-1">IPv4 & IPv6</p>
           </div>
-          <div className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-4">
+          <div className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-3.5 sm:p-4">
             <p className="text-xs text-slate-400">ขอข้อมูลแล้ว</p>
-            <p className="text-2xl font-bold text-amber-300 mt-1">{fmt(kpi?.requested_count)}</p>
+            <p className="text-xl sm:text-2xl font-bold text-amber-300 mt-1">{fmt(kpi?.requested_count)}</p>
             <p className="text-xs text-slate-500 mt-1">ได้รับแล้ว: {fmt(kpi?.received_count)}</p>
           </div>
-          <div className="rounded-xl bg-[#0c1f2e] border border-rose-500/30 p-4">
+          <div className="rounded-xl bg-[#0c1f2e] border border-rose-500/30 p-3.5 sm:p-4">
             <p className="text-xs text-slate-400">ขอข้อมูลไม่ได้</p>
-            <p className="text-2xl font-bold text-rose-400 mt-1">{fmt(kpi?.unavailable_count)}</p>
+            <p className="text-xl sm:text-2xl font-bold text-rose-400 mt-1">{fmt(kpi?.unavailable_count)}</p>
             <p className="text-xs text-slate-500 mt-1">ตอบกลับแล้ว: {fmt(kpi?.replied_count)}</p>
           </div>
         </section>
 
         {/* Charts */}
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-4 space-y-3">
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+          <div className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-3.5 sm:p-4 space-y-3">
             <h2 className="text-sm font-semibold text-slate-200">เครือข่ายที่พบมากที่สุด (Top 6 Networks)</h2>
             <div className="space-y-2">
               {(data?.top_networks || []).map((n) => (
-                <div key={n.label} className="flex items-center gap-3 text-xs">
-                  <span className="w-40 truncate text-slate-300" title={n.label}>{n.label}</span>
+                <div key={n.label} className="flex items-center gap-2 sm:gap-3 text-xs">
+                  <span className="w-28 sm:w-40 truncate text-slate-300" title={n.label}>{n.label}</span>
                   <div className="flex-1 h-2.5 bg-[#081521] rounded-full overflow-hidden">
                     <div
                       className="h-full bg-[#35d0ba] rounded-full"
                       style={{ width: `${Math.max(2, (Number(n.value) / maxNet) * 100)}%` }}
                     />
                   </div>
-                  <span className="w-16 text-right font-mono text-slate-200">{fmt(n.value)}</span>
+                  <span className="w-14 sm:w-16 text-right font-mono text-slate-200">{fmt(n.value)}</span>
                 </div>
               ))}
             </div>
           </div>
-          <div className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-4 space-y-3">
+          <div className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] p-3.5 sm:p-4 space-y-3">
             <h2 className="text-sm font-semibold text-slate-200">ประเทศที่จดทะเบียนเครือข่าย (RDAP)</h2>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
               {(data?.top_countries || []).map((c) => (
-                <div key={c.label} className="flex items-center justify-between bg-[#081521] rounded-lg px-3 py-2 border border-[#1e3b4f]">
+                <div key={c.label} className="flex items-center justify-between gap-2 bg-[#081521] rounded-lg px-3 py-2 border border-[#1e3b4f]">
                   <span className="truncate text-slate-300">{c.label}</span>
-                  <span className="font-mono font-semibold text-[#4aa8ff]">{fmt(c.value)}</span>
+                  <span className="font-mono font-semibold text-[#4aa8ff] shrink-0">{fmt(c.value)}</span>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* Table */}
+        {/* Data Section: Mobile Cards + Desktop Table */}
         <section className="rounded-xl bg-[#0c1f2e] border border-[#1e3b4f] overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Mobile Card List (< md) */}
+          <div className="md:hidden divide-y divide-[#1e3b4f]/70">
+            {(data?.records || []).map((row) => {
+              const st = statusBadge(row);
+              return (
+                <div key={row.record_key} className="p-3.5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="px-2 py-0.5 rounded bg-[#122b3e] text-[#4aa8ff] font-medium shrink-0">
+                        {row.platform}
+                      </span>
+                      {row.scammer_case && (
+                        <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500/40 shrink-0">
+                          {row.scammer_case}
+                        </span>
+                      )}
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] shrink-0 ${st.cls}`}>{st.label}</span>
+                  </div>
+
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="font-semibold text-white text-sm truncate" title={row.account}>{row.account}</div>
+                    <div className="text-[11px] text-slate-400 shrink-0">{row.event_type}</div>
+                  </div>
+
+                  <div className="bg-[#081521] rounded-lg p-2.5 border border-[#1e3b4f]/70 space-y-1">
+                    <div className="flex items-center justify-between gap-2 font-mono">
+                      <span className="text-[#35d0ba] font-semibold break-all">{row.ip || "—"}</span>
+                      {row.port ? <span className="text-[11px] text-slate-400 shrink-0">Port {row.port}</span> : null}
+                    </div>
+                    <div className="text-slate-300 truncate">{row.network || "ไม่ระบุเครือข่าย"} · {row.country || "—"}</div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+                    <span className="font-mono">{row.local_time || "—"}</span>
+                    <span>
+                      {row.inst_id ? `INST: ${row.inst_id}` : ""}
+                      {row.tpo_code ? ` · ${row.tpo_code}` : ""}
+                      {row.letter_number ? ` · หนังสือ: ${row.letter_number}` : ""}
+                    </span>
+                  </div>
+
+                  {user.role === "master_admin" && (
+                    <div className="pt-1">
+                      <button
+                        onClick={() => {
+                          setEditing(row);
+                          setEditForm({
+                            unavailable: Boolean(row.unavailable),
+                            requested: Boolean(row.requested),
+                            replied: Boolean(row.replied),
+                            received: Boolean(row.received),
+                            letter_number: row.letter_number || "",
+                            result: row.result || "",
+                          });
+                        }}
+                        className="w-full py-1.5 rounded-lg bg-[#122b3e] hover:bg-[#1a3d56] border border-[#244c68] text-slate-200 flex items-center justify-center gap-1.5 font-medium"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" /> แก้ไขสถานะหนังสือ
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop Table (>= md) */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs whitespace-nowrap">
               <thead className="bg-[#081521] text-slate-400 border-b border-[#1e3b4f]">
                 <tr>
@@ -753,20 +957,20 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
               </tbody>
             </table>
           </div>
-          <div className="px-4 py-3 border-t border-[#1e3b4f] flex items-center justify-between text-xs text-slate-400">
+          <div className="px-3.5 sm:px-4 py-3 border-t border-[#1e3b4f] flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-slate-400">
             <span>หน้า {fmt(currentPage)} / {fmt(totalPages)} (ทั้งหมด {fmt(data?.pagination.total)} รายการ)</span>
-            <div className="flex gap-2">
+            <div className="flex gap-2 w-full sm:w-auto">
               <button
-                disabled={offset === 0}
+                disabled={offset === 0 || loading}
                 onClick={() => setOffset(Math.max(0, offset - limit))}
-                className="px-3 py-1 rounded bg-[#081521] border border-[#1e3b4f] disabled:opacity-40"
+                className="flex-1 sm:flex-none px-4 py-2 sm:py-1.5 rounded-lg bg-[#081521] border border-[#1e3b4f] hover:border-[#35d0ba]/50 disabled:opacity-40"
               >
                 ก่อนหน้า
               </button>
               <button
-                disabled={currentPage >= totalPages}
+                disabled={currentPage >= totalPages || loading}
                 onClick={() => setOffset(offset + limit)}
-                className="px-3 py-1 rounded bg-[#081521] border border-[#1e3b4f] disabled:opacity-40"
+                className="flex-1 sm:flex-none px-4 py-2 sm:py-1.5 rounded-lg bg-[#081521] border border-[#1e3b4f] hover:border-[#35d0ba]/50 disabled:opacity-40"
               >
                 ถัดไป
               </button>
@@ -778,7 +982,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
       {/* Edit Modal */}
       {editing && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <form onSubmit={saveEdit} className="w-full max-w-lg rounded-2xl bg-[#0c1f2e] border border-[#1e3b4f] p-6 space-y-4">
+          <form onSubmit={saveEdit} className="w-full max-w-lg rounded-2xl bg-[#0c1f2e] border border-[#1e3b4f] p-4 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-white">แก้ไขสถานะหนังสือ · {editing.ip}</h3>
               <button type="button" onClick={() => setEditing(null)}><X className="w-5 h-5" /></button>
@@ -1036,7 +1240,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
       {/* Account Completion Modal */}
       {completeOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleCompleteAccount} className="w-full max-w-lg rounded-2xl bg-[#0c1f2e] border border-[#1e3b4f] p-6 space-y-4">
+          <form onSubmit={handleCompleteAccount} className="w-full max-w-lg rounded-2xl bg-[#0c1f2e] border border-[#1e3b4f] p-4 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[11px] tracking-widest text-teal-300 font-semibold">ACCOUNT COMPLETION</p>

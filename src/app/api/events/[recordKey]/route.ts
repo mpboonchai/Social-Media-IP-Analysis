@@ -3,6 +3,7 @@ import type mysql from "mysql2/promise";
 import { getPool } from "@/db";
 import { getSessionUser } from "@/lib/auth";
 import { hexToBuffer32 } from "@/lib/ip-utils";
+import { invalidateEventsStatsCache } from "@/lib/events-cache";
 
 export async function PATCH(
   req: NextRequest,
@@ -74,5 +75,6 @@ export async function PATCH(
     ]
   );
 
+  invalidateEventsStatsCache();
   return NextResponse.json({ ok: true });
 }

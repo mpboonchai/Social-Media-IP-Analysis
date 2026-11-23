@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type mysql from "mysql2/promise";
 import { getPool } from "@/db";
 import { getSessionUser } from "@/lib/auth";
+import { invalidateEventsStatsCache } from "@/lib/events-cache";
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
     [reason, user.username, accountId]
   );
 
+  invalidateEventsStatsCache();
   return NextResponse.json({
     ok: true,
     platform: accRows[0].platform,

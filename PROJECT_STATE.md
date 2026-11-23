@@ -11,6 +11,8 @@
 - **สถานะปัจจุบัน**:
   - **Deploy ขึ้น Production เรียบร้อยแล้ว** (Vercel + TiDB Cloud Serverless 100% Free Tier)
   - โค้ดทั้งหมดเสร็จสมบูรณ์ (Auth, Upload ZIP, RDAP Auto-lookup, Search/Filter, CSV Export 3 ชุด, PPTX Report 17 สไลด์, User Management, Account Completion)
+  - **Performance Optimization**: Subquery-first PK pagination (เร็วขึ้น ~14 เท่า), `Promise.all` parallel queries, Pre-aggregated RDAP query, In-memory 60s stats cache + `skip_stats=1` pagination, Search debounce 350ms
+  - **Responsive UI (Mobile + Desktop)**: เมนูแบบพับเก็บได้บนมือถือ, การ์ดแสดงรายการบนหน้าจอเล็กคู่กับตารางเต็มรูปแบบบน Desktop, Modal แบบเลื่อนได้บนมือถือ
   - Unit Tests: 6/6 ผ่าน
   - ข้อมูลระบบเดิมทั้งหมด (608,636 รายการ) ย้ายขึ้น TiDB Cloud เรียบร้อย 100%
 

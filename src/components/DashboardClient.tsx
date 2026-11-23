@@ -30,6 +30,7 @@ import ExcelManagerView, {
 } from "./ExcelManagerView";
 import CountryIspStatsView from "./CountryIspStatsView";
 import ScammerCasesSheet from "./ScammerCasesSheet";
+import ZipUploadModal from "./ZipUploadModal";
 
 type IpEventRow = ExcelEventRow;
 
@@ -1708,138 +1709,12 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
         </div>
       )}
 
-      {/* ==================== UPLOAD ZIP MODAL (SEPARATED META & TIKTOK PARSERS) ==================== */}
-      {uploadOpen && (
-        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleZipUpload} className="w-full max-w-xl rounded-2xl bg-[#0a1d45] border border-[#ffd000]/50 p-4 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] tracking-widest text-[#ffd000] font-bold">RAW EVIDENCE INGESTION</p>
-                <h3 className="font-bold text-white">อัปโหลดไฟล์ดิบ ZIP ลงฐานข้อมูล (META / TikTok)</h3>
-              </div>
-              <button type="button" onClick={() => setUploadOpen(false)}><X className="w-5 h-5" /></button>
-            </div>
-
-            {/* Platform Parser Tabs */}
-            <div className="grid grid-cols-3 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setUploadPlatformHint("META")}
-                className={`p-2.5 rounded-xl border text-left transition ${
-                  uploadPlatformHint === "META"
-                    ? "bg-[#ffd000] text-[#05112b] border-[#ffd000] font-bold"
-                    : "bg-[#05112b] text-blue-100 border-[#1d3a78]"
-                }`}
-              >
-                <div className="text-sm font-bold">META ZIP</div>
-                <div className="text-[11px] opacity-80">Facebook / Instagram</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setUploadPlatformHint("TikTok")}
-                className={`p-2.5 rounded-xl border text-left transition ${
-                  uploadPlatformHint === "TikTok"
-                    ? "bg-[#ffd000] text-[#05112b] border-[#ffd000] font-bold"
-                    : "bg-[#05112b] text-blue-100 border-[#1d3a78]"
-                }`}
-              >
-                <div className="text-sm font-bold">TikTok ZIP</div>
-                <div className="text-[11px] opacity-80">TikTok Response ZIP</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setUploadPlatformHint("auto")}
-                className={`p-2.5 rounded-xl border text-left transition ${
-                  uploadPlatformHint === "auto"
-                    ? "bg-[#ffd000] text-[#05112b] border-[#ffd000] font-bold"
-                    : "bg-[#05112b] text-blue-100 border-[#1d3a78]"
-                }`}
-              >
-                <div className="text-sm font-bold">ตรวจจับอัตโนมัติ</div>
-                <div className="text-[11px] opacity-80">อัปโหลดรวมกันได้</div>
-              </button>
-            </div>
-
-            <div className="rounded-lg bg-[#05112b] border border-[#1d3a78] p-3 text-xs text-blue-200 space-y-1">
-              {uploadPlatformHint === "META" && (
-                <>
-                  <p className="font-bold text-[#ffd000]">ตัวอ่าน META (Facebook / Instagram):</p>
-                  <p>อ่านไฟล์ `records.html` / Preservation HTML แยกประเภท User / InstagramUser / Page / Group, แปลงเวลา UTC+7, ดึง IP/Port, จับคู่เคส Scammer และดึง RDAP ลงฐานข้อมูลอัตโนมัติ</p>
-                </>
-              )}
-              {uploadPlatformHint === "TikTok" && (
-                <>
-                  <p className="font-bold text-[#ffd000]">ตัวอ่าน TikTok:</p>
-                  <p>อ่านไฟล์ PDF / HTML / Text ภายใน ZIP ของ TikTok แยกเหตุการณ์ Login / Logout / Signup / IP Address, แปลงเวลา UTC+7, จับคู่เคส Scammer และดึง RDAP ลงฐานข้อมูลอัตโนมัติ</p>
-                </>
-              )}
-              {uploadPlatformHint === "auto" && (
-                <>
-                  <p className="font-bold text-[#ffd000]">โหมดตรวจจับอัตโนมัติ (META + TikTok):</p>
-                  <p>ระบบจะตรวจสอบโครงสร้างไฟล์ภายใน ZIP แต่ละไฟล์อัตโนมัติ แล้วส่งเข้าตัวอ่าน META หรือ TikTok ที่ตรงกัน พร้อมป้องกันการนำเข้าไฟล์ซ้ำด้วย SHA-256</p>
-                </>
-              )}
-            </div>
-
-            <input
-              type="file"
-              name="files"
-              accept=".zip"
-              multiple
-              required
-              className="w-full text-sm text-blue-100 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#133273] file:text-[#ffd000] file:font-semibold"
-            />
-
-            {uploadMsg && <p className="text-xs text-[#ffd000] font-medium">{uploadMsg}</p>}
-
-            {uploadResults.length > 0 && (
-              <div className="space-y-1.5 max-h-48 overflow-y-auto text-xs">
-                {uploadResults.map((r, i) => (
-                  <div key={i} className="rounded-lg bg-[#05112b] border border-[#1d3a78] p-2.5 flex flex-col gap-0.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-white truncate">{r.filename}</span>
-                      <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                        r.status === "processed"
-                          ? "bg-emerald-900/70 text-emerald-200"
-                          : r.status === "skipped_duplicate"
-                          ? "bg-amber-900/70 text-amber-200"
-                          : "bg-rose-900/70 text-rose-200"
-                      }`}>
-                        {r.status === "processed" ? "นำเข้าสำเร็จ" : r.status === "skipped_duplicate" ? "มีในระบบแล้ว" : "ผิดพลาด"}
-                      </span>
-                    </div>
-                    <div className="text-blue-300">
-                      ตัวอ่าน: {r.parser_used} · อ่านได้ {fmt(r.records)} รายการ
-                      {r.status === "processed" && (
-                        <>
-                          {" · "}
-                          <span className="text-emerald-300 font-semibold">เพิ่มใหม่ {fmt(r.inserted_new)}</span>
-                          {" · "}
-                          <span className="text-amber-300">ซ้ำ (ข้าม) {fmt(r.skipped_duplicates)}</span>
-                        </>
-                      )}
-                      {" · "}
-                      {fmt(r.unique_ips)} IP · เคส Scammer: {fmt(r.scammer_matched)}
-                    </div>
-                    {r.error && <div className="text-rose-400">{r.error}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setUploadOpen(false)} className="px-4 py-2 rounded-lg bg-[#0f2454]">ปิด</button>
-              <button
-                type="submit"
-                disabled={uploadBusy}
-                className="px-4 py-2 rounded-lg bg-[#ffd000] hover:bg-[#eab308] text-[#05112b] font-bold disabled:opacity-50"
-              >
-                {uploadBusy ? "กำลังอัปโหลดและประมวลผล..." : "อัปโหลดและบันทึกลงฐานข้อมูล"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      {/* ==================== UPLOAD ZIP MODAL (DRAG & DROP MULTI-FILE + LIVE PROGRESS) ==================== */}
+      <ZipUploadModal
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onComplete={() => fetchEvents(true)}
+      />
 
       {/* ==================== CASES EXCEL MODAL ==================== */}
       {casesOpen && (

@@ -5,13 +5,23 @@ import { getPool } from "@/db";
 import { getSessionUser } from "@/lib/auth";
 import { buildEventWhereClause } from "@/lib/events-query";
 
+function computeStatusLabel(r: Record<string, unknown>): string {
+  if (Number(r.no_ip_data)) return "ไม่มีข้อมูล IP";
+  if (Number(r.unavailable)) return "ขอข้อมูลไม่ได้";
+  if (Number(r.received)) return "ได้รับข้อมูลแล้ว";
+  if (Number(r.no_ip_request_needed)) return "ไม่ต้องขอข้อมูล IP";
+  if (Number(r.replied)) return "ตอบกลับแล้ว";
+  if (Number(r.requested)) return "ขอข้อมูลแล้ว";
+  return "ยังไม่ดำเนินการ";
+}
+
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const sp = req.nextUrl.searchParams;
   const maxRows = Math.min(25000, Math.max(100, Number(sp.get("max_rows") || 10000)));
-  const sheetMode = sp.get("sheet") || "all"; // "all" | "scammers"
+  const sheetMode = sp.get("sheet") || "all";
 
   const { whereSql, params } = buildEventWhereClause({
     search: (sp.get("search") || "").trim() || undefined,
@@ -36,11 +46,7 @@ export async function GET(req: NextRequest) {
   if (sheetMode !== "scammers") {
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT
-         LOWER(HEX(e.record_key)) AS record_key,
-         DATE_FORMAT(e.event_local, '%Y-%m-%d %H:%i:%s') AS local_time,
-         DATE_FORMAT(e.event_utc, '%Y-%m-%d %H:%i:%s') AS utc_at,
          e.platform,
-         e.event_type,
          e.it_no,
          sa.target_id,
          e.inst_id,
@@ -49,19 +55,28 @@ export async function GET(req: NextRequest) {
          e.reported_date,
          e.team,
          sa.account_name AS account,
+         sa.account_identifier,
          sa.meta_account_type,
-         e.page_admin,
          e.meta_actor_display,
+         e.page_admin,
+         e.event_type,
+         DATE_FORMAT(e.event_utc, '%Y-%m-%d %H:%i:%s') AS utc_at,
+         DATE_FORMAT(e.event_local, '%Y-%m-%d %H:%i:%s') AS local_time,
          INET6_NTOA(e.ip_bin) AS ip,
-         e.port,
+         IF(e.ip_version = 6, 'IPv6', IF(e.ip_version = 4, 'IPv4', '')) AS ip_version_label,
          e.ip_type,
-         COALESCE(r.network_name, '') AS network,
-         COALESCE(r.owner_name, '') AS owner,
-         COALESCE(r.country, '') AS country,
-         COALESCE(r.from_ip, '') AS from_ip,
-         COALESCE(r.to_ip, '') AS to_ip,
+         e.port,
+         e.tiktok_country,
          e.source_zip,
          e.source_pdf,
+         e.source_no,
+         LOWER(HEX(e.record_key)) AS record_key,
+         COALESCE(r.country, '') AS country,
+         COALESCE(r.network_name, '') AS network,
+         COALESCE(r.owner_name, '') AS owner,
+         COALESCE(r.from_ip, '') AS from_ip,
+         COALESCE(r.to_ip, '') AS to_ip,
+         e.no_ip_data,
          COALESCE(t.unavailable, 0) AS unavailable,
          COALESCE(t.requested, 0) AS requested,
          COALESCE(t.replied, 0) AS replied,
@@ -69,10 +84,24 @@ export async function GET(req: NextRequest) {
          COALESCE(t.no_ip_request_needed, 0) AS no_ip_request_needed,
          COALESCE(t.letter_number, '') AS letter_number,
          COALESCE(t.result, '') AS result,
+         COALESCE(t.entity_user_id, '') AS entity_user_id,
          COALESCE(t.entity_name, '') AS entity_name,
-         COALESCE(t.entity_phone, '') AS entity_phone,
+         COALESCE(t.entity_country, '') AS entity_country,
+         COALESCE(t.entity_address, '') AS entity_address,
          COALESCE(t.entity_email, '') AS entity_email,
-         COALESCE(t.entity_address, '') AS entity_address
+         COALESCE(t.entity_phone, '') AS entity_phone,
+         COALESCE(t.entity_payment, '') AS entity_payment,
+         COALESCE(t.entity_account_no, '') AS entity_account_no,
+         COALESCE(t.access_service, '') AS access_service,
+         COALESCE(t.access_datetime_local, '') AS access_datetime_local,
+         COALESCE(t.access_ip, '') AS access_ip,
+         COALESCE(t.access_remote_port, '') AS access_remote_port,
+         COALESCE(t.access_ip_country, '') AS access_ip_country,
+         COALESCE(t.access_network, '') AS access_network,
+         COALESCE(t.access_isp, '') AS access_isp,
+         COALESCE(t.updated_by, '') AS updated_by,
+         DATE_FORMAT(t.updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at,
+         e.case_window_match
        FROM ip_events e
        JOIN social_accounts sa ON sa.id = e.account_id
        LEFT JOIN rdap_networks r ON r.id = e.rdap_network_id
@@ -83,13 +112,10 @@ export async function GET(req: NextRequest) {
       [...params, maxRows]
     );
 
+    // Exact 57 columns matching Social_Media_IP_Analysis-Ex.xlsx (Sheet: IP Events)
     const ws = wb.addWorksheet("IP Events");
     ws.columns = [
-      { header: "record_key", key: "record_key", width: 22 },
-      { header: "เวลา UTC+7", key: "local_time", width: 20 },
-      { header: "เวลา UTC", key: "utc_at", width: 20 },
-      { header: "แพลตฟอร์ม", key: "platform", width: 12 },
-      { header: "ประเภทเหตุการณ์", key: "event_type", width: 16 },
+      { header: "Platform", key: "platform", width: 12 },
       { header: "IT No.", key: "it_no", width: 14 },
       { header: "Target ID", key: "target_id", width: 20 },
       { header: "INST ID", key: "inst_id", width: 14 },
@@ -97,46 +123,73 @@ export async function GET(req: NextRequest) {
       { header: "เคส Scammer", key: "scammer_case", width: 13 },
       { header: "วันที่รับแจ้ง", key: "reported_date", width: 14 },
       { header: "ทีม", key: "team", width: 12 },
-      { header: "บัญชี", key: "account", width: 30 },
+      { header: "Account", key: "account", width: 28 },
+      { header: "Account Identifier", key: "account_identifier", width: 28 },
       { header: "ประเภทบัญชี Meta", key: "meta_account_type", width: 16 },
-      { header: "Page Admin", key: "page_admin", width: 22 },
-      { header: "Meta Actor", key: "meta_actor_display", width: 22 },
+      { header: "ผู้ใช้/แอดมิน ณ เวลา", key: "meta_actor_display", width: 22 },
+      { header: "แอดมินเพจ (หลักฐานดิบ)", key: "page_admin", width: 22 },
+      { header: "Event Type", key: "event_type", width: 16 },
+      { header: "เวลา UTC", key: "utc_at", width: 20 },
+      { header: "เวลา UTC+7", key: "local_time", width: 20 },
       { header: "IP", key: "ip", width: 18 },
+      { header: "IP Version", key: "ip_version_label", width: 11 },
+      { header: "ประเภท IP", key: "ip_type", width: 12 },
       { header: "Port", key: "port", width: 8 },
-      { header: "IP Type", key: "ip_type", width: 12 },
-      { header: "เครือข่าย (ISP)", key: "network", width: 24 },
-      { header: "Owner / ISP Detail", key: "owner", width: 28 },
-      { header: "ประเทศ (RDAP)", key: "country", width: 16 },
+      { header: "Platform Country", key: "tiktok_country", width: 15 },
+      { header: "Source ZIP", key: "source_zip", width: 24 },
+      { header: "Source PDF", key: "source_pdf", width: 24 },
+      { header: "Source No.", key: "source_no", width: 11 },
+      { header: "Record Key", key: "record_key", width: 24 },
+      { header: "Country", key: "country", width: 15 },
+      { header: "Network Name", key: "network", width: 24 },
+      { header: "Owner Name", key: "owner", width: 28 },
       { header: "From IP", key: "from_ip", width: 16 },
       { header: "To IP", key: "to_ip", width: 16 },
-      { header: "Source ZIP", key: "source_zip", width: 24 },
-      { header: "Source PDF/HTML", key: "source_pdf", width: 24 },
+      { header: "ไม่มีข้อมูล IP", key: "no_ip_data", width: 12 },
       { header: "ขอข้อมูลไม่ได้", key: "unavailable", width: 13 },
       { header: "ขอข้อมูลแล้ว", key: "requested", width: 13 },
       { header: "ตอบกลับแล้ว", key: "replied", width: 13 },
       { header: "ได้รับข้อมูลแล้ว", key: "received", width: 14 },
-      { header: "ไม่ต้องขอ IP", key: "no_ip_request_needed", width: 13 },
+      { header: "ไม่ต้องขอข้อมูล IP", key: "no_ip_request_needed", width: 15 },
+      { header: "สถานะ", key: "status_label", width: 16 },
       { header: "เลขหนังสือ", key: "letter_number", width: 22 },
-      { header: "ผลลัพธ์ / หมายเหตุ", key: "result", width: 28 },
-      { header: "ชื่อผู้จดทะเบียน / Entity", key: "entity_name", width: 24 },
-      { header: "เบอร์โทร", key: "entity_phone", width: 16 },
-      { header: "อีเมล Entity", key: "entity_email", width: 22 },
-      { header: "ที่อยู่ Entity", key: "entity_address", width: 30 },
+      { header: "ผลลัพธ์", key: "result", width: 28 },
+      { header: "User ID", key: "entity_user_id", width: 18 },
+      { header: "Name", key: "entity_name", width: 24 },
+      { header: "Entity Country", key: "entity_country", width: 15 },
+      { header: "Address", key: "entity_address", width: 28 },
+      { header: "Email", key: "entity_email", width: 22 },
+      { header: "Phone", key: "entity_phone", width: 16 },
+      { header: "Payment", key: "entity_payment", width: 20 },
+      { header: "Account No.", key: "entity_account_no", width: 20 },
+      { header: "Service", key: "access_service", width: 16 },
+      { header: "Access DateTime (UTC+7)", key: "access_datetime_local", width: 22 },
+      { header: "Access IP", key: "access_ip", width: 18 },
+      { header: "Remote port", key: "access_remote_port", width: 12 },
+      { header: "Access IP Country", key: "access_ip_country", width: 16 },
+      { header: "Access Network", key: "access_network", width: 22 },
+      { header: "Access ISP", key: "access_isp", width: 22 },
+      { header: "Updated By", key: "updated_by", width: 14 },
+      { header: "Updated At", key: "updated_at", width: 20 },
+      { header: "ใกล้วันรับแจ้ง", key: "case_window_match", width: 13 },
     ];
 
     ws.getRow(1).eachCell((cell) => {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF05112B" } };
       cell.font = { bold: true, color: { argb: "FFFFD000" } };
     });
-    ws.autoFilter = { from: "A1", to: "AK1" };
+    ws.autoFilter = { from: "A1", to: "BE1" };
     ws.views = [{ state: "frozen", ySplit: 1 }];
 
     for (const r of rows) {
-      ws.addRow(r);
+      ws.addRow({
+        ...r,
+        status_label: computeStatusLabel(r),
+      });
     }
   }
 
-  // Sheet 2: Scammer Cases (matching url_cases_(Scammer).xlsx)
+  // Sheet 2: URL Cases Scammer (exact match with url_cases_(Scammer).xlsx)
   const [caseRows] = await pool.query<mysql.RowDataPacket[]>(
     `SELECT
        inst_id, data_id, tracking_code,
@@ -147,7 +200,7 @@ export async function GET(req: NextRequest) {
      ORDER BY id DESC`
   );
 
-  const wsCases = wb.addWorksheet("เคส Scammers");
+  const wsCases = wb.addWorksheet("URL Cases Scammer");
   wsCases.columns = [
     { header: "inst_id", key: "inst_id", width: 14 },
     { header: "data_id", key: "data_id", width: 14 },
@@ -159,7 +212,7 @@ export async function GET(req: NextRequest) {
     { header: "account_name", key: "account_name", width: 28 },
     { header: "tracking_status", key: "tracking_status", width: 18 },
     { header: "replied_at", key: "replied_at", width: 18 },
-    { header: "เลขหนังสือ / TPO", key: "tpo_code", width: 20 },
+    { header: "เลขหนังสือ", key: "tpo_code", width: 20 },
     { header: "note", key: "note", width: 28 },
     { header: "response_account", key: "response_account", width: 24 },
   ];
@@ -175,7 +228,7 @@ export async function GET(req: NextRequest) {
 
   const outBuf = await wb.xlsx.writeBuffer();
   const dateTag = new Date().toISOString().slice(0, 10);
-  const fname = sheetMode === "scammers" ? `scammer_cases_${dateTag}.xlsx` : `social_media_ip_filtered_${dateTag}.xlsx`;
+  const fname = sheetMode === "scammers" ? `url_cases_scammer_${dateTag}.xlsx` : `Social_Media_IP_Analysis_${dateTag}.xlsx`;
 
   return new NextResponse(Buffer.from(outBuf), {
     status: 200,

@@ -248,6 +248,7 @@ export async function GET(req: NextRequest) {
       DATE_FORMAT(e.event_local, '%Y-%m-%d %H:%i:%s') AS local_time,
       DATE_FORMAT(e.event_utc, '%Y-%m-%d %H:%i:%s') AS utc_at,
       INET6_NTOA(e.ip_bin) AS ip,
+      e.ip_version,
       e.port,
       e.ip_type,
       e.it_no,
@@ -294,7 +295,9 @@ export async function GET(req: NextRequest) {
       COALESCE(t.access_remote_port, '') AS access_remote_port,
       COALESCE(t.access_ip_country, '') AS access_ip_country,
       COALESCE(t.access_network, '') AS access_network,
-      COALESCE(t.access_isp, '') AS access_isp
+      COALESCE(t.access_isp, '') AS access_isp,
+      COALESCE(t.updated_by, '') AS updated_by,
+      DATE_FORMAT(t.updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at
   `;
 
   const recordsPromise =

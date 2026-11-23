@@ -5,12 +5,14 @@
 ---
 
 ## 1. ข้อมูลภาพรวม (Overview)
+- **Production URL (Vercel)**: `https://social-media-ip-analysis-one.vercel.app`
 - **Repo GitHub**: [`mpboonchai/Social-Media-IP-Analysis`](https://github.com/mpboonchai/Social-Media-IP-Analysis) (Branch: `main`)
 - **เทคโนโลยีหลัก**: Next.js 15 (App Router, TypeScript) + Tailwind CSS + MySQL 8.0 / TiDB Cloud Serverless
 - **สถานะปัจจุบัน**:
+  - **Deploy ขึ้น Production เรียบร้อยแล้ว** (Vercel + TiDB Cloud Serverless 100% Free Tier)
   - โค้ดทั้งหมดเสร็จสมบูรณ์ (Auth, Upload ZIP, RDAP Auto-lookup, Search/Filter, CSV Export 3 ชุด, PPTX Report 17 สไลด์, User Management, Account Completion)
   - Unit Tests: 6/6 ผ่าน
-  - ข้อมูลระบบเดิมทั้งหมด (Legacy Data) ถูกสกัดและเตรียมพร้อมไว้แล้ว
+  - ข้อมูลระบบเดิมทั้งหมด (608,636 รายการ) ย้ายขึ้น TiDB Cloud เรียบร้อย 100%
 
 ---
 

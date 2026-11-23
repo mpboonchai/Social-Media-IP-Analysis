@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js
+.next/
+out/
+build/
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+
+# Sensitive Investigation Data & Exports (NEVER COMMIT)
+data/
+*.ndjson
+*.csv
+*.xlsx
+*.xls
+*.zip
+*.sql
+!db/schema.sql
+
+# Logs & OS
+*.log
+*.tsbuildinfo
+.DS_Store

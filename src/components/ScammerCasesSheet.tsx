@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Download, Search, RefreshCw } from "lucide-react";
+import { Download, Search, RefreshCw, Upload } from "lucide-react";
 import { formatDateDMY, formatDateTimeDMY } from "@/lib/date-format";
 
 interface ScammerCaseItem {
@@ -21,7 +21,13 @@ interface ScammerCaseItem {
   response_account: string;
 }
 
-export default function ScammerCasesSheet() {
+export default function ScammerCasesSheet({
+  isAdmin = false,
+  onOpenImport,
+}: {
+  isAdmin?: boolean;
+  onOpenImport?: () => void;
+}) {
   const [cases, setCases] = useState<ScammerCaseItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -73,6 +79,15 @@ export default function ScammerCasesSheet() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> รีเฟรช
           </button>
+          {isAdmin && onOpenImport && (
+            <button
+              type="button"
+              onClick={onOpenImport}
+              className="px-3 py-1.5 rounded-lg bg-[#133273] hover:bg-[#1a4399] border border-[#ffd000]/60 text-[#ffd000] font-bold flex items-center gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" /> อัปเดตจาก url_cases (Scammer).xlsx
+            </button>
+          )}
           <button
             type="button"
             onClick={() => window.open("/api/export/excel?sheet=scammers", "_blank")}

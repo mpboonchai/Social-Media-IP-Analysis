@@ -539,11 +539,13 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   async function handleCasesUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    setCasesMsg("กำลังนำเข้าไฟล์ Scammer Excel และจับคู่เคส...");
+    setCasesMsg("กำลังนำเข้าไฟล์ url_cases (Scammer).xlsx และจับคู่อัปเดต CaseID ในฐานข้อมูล...");
     const res = await fetch("/api/cases/import", { method: "POST", body: fd });
     const body = await res.json();
     if (res.ok) {
-      setCasesMsg(`นำเข้าเคส Scammer สำเร็จ ${fmt(body.imported_cases)} รายการ`);
+      const doneMsg = `ดำเนินการเสร็จแล้ว! นำเข้าเคส Scammer ${fmt(body.imported_cases)} เคส · จับคู่ได้ ${fmt(body.matched_accounts)} บัญชี · อัปเดตเหตุการณ์ IP เพิ่มเติม ${fmt(body.updated_events)} รายการ`;
+      setCasesMsg(doneMsg);
+      window.alert(doneMsg);
       fetchEvents(true);
     } else {
       setCasesMsg(`ผิดพลาด: ${body.error}`);
@@ -1547,7 +1549,13 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
         {activeView === "analytics" ? (
           <CountryIspStatsView filterQuery={buildFilterQuery().toString()} />
         ) : activeView === "scammers" ? (
-          <ScammerCasesSheet />
+          <ScammerCasesSheet
+            isAdmin={user.role === "master_admin"}
+            onOpenImport={() => {
+              setCasesMsg("");
+              setCasesOpen(true);
+            }}
+          />
         ) : activeView === "excel" ? (
           <ExcelManagerView
             records={data?.records || []}

@@ -14,15 +14,13 @@
 
 ---
 
-## 2. ข้อมูลสถิติของ Legacy Dataset ที่ถูก Export ไว้
-ไฟล์ดิบที่ Export จากระบบเดิมถูกเก็บไว้ที่:
-`/home/antigravity/.gemini/jetski/brain/v1/default/jetski_remote_agents_3p_devbox/9ecb32ad-02de-4857-b4c8-d7bb6e11d963/scratch/export/`
-- **`ip_events.ndjson`**: **608,636** รายการ IP (818 MB)
-- **`cases.json`**: **989** เคส Scammer / ผู้เสียหาย
-- **`rdap_cache.json`**: **8,512** IP Ranges
-- **`reports.json`**: **8** สรุปรายงานสืบสวนเดิม
+## 2. ข้อมูลสถิติของ Dataset บน TiDB Cloud Serverless (ย้ายข้อมูลเรียบร้อยแล้ว 100%)
+- **`ip_events`**: **608,636** รายการ IP ครบถ้วน 100%
+- **`cases`**: **989** เคส Scammer / ผู้เสียหาย
+- **`rdap_networks`**: **2,977** IP Ranges
+- **`report_snapshots`**: **8** สรุปรายงานสืบสวนเดิม
 - **`users`**: บัญชี Admin เดิม (`masteradmin` / `TCSD2tpo2026***`)
-- **ขนาดบน MySQL หลังแปลง**: ~382 MB (ไม่เกินโควตา TiDB Cloud Serverless 5 GiB)
+- **ขนาดบน TiDB Cloud**: ~382 MB (ใช้ไปไม่ถึง 8% ของโควตาฟรี 5 GiB)
 
 ---
 

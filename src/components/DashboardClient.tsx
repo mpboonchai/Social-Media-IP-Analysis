@@ -1566,13 +1566,13 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                         <span className="cursor-pointer hover:text-[#ffd000] inline-flex items-center gap-1" onClick={() => handleSort("local_time")}>
                           เวลา UTC+7 <ArrowUpDown className="w-3 h-3" />{sortIndicator("local_time")}
                         </span>
-                        <ColumnFilterPopover title="วันที่ (UTC+7)" options={tableOpts.local_date} selected={colFilters.local_date} onApply={(v) => handleColFilterChange("local_date", v)} />
+                        <ColumnFilterPopover columnKey="local_date" title="วันที่ (UTC+7)" options={tableOpts.local_date} selected={colFilters.local_date} onApply={(v) => handleColFilterChange("local_date", v)} />
                       </div>
                     </th>
                     <th className="sticky left-[156px] z-20 bg-[#05112b] px-3 py-3 border-r border-[#1a346e] min-w-[148px] w-[148px]">
                       <div className="inline-flex items-center gap-1">
                         <span className="text-[#ffd000]">IP</span>
-                        <ColumnFilterPopover title="IP" options={tableOpts.ip} selected={colFilters.ip} onApply={(v) => handleColFilterChange("ip", v)} />
+                        <ColumnFilterPopover columnKey="ip" title="IP" options={tableOpts.ip} selected={colFilters.ip} onApply={(v) => handleColFilterChange("ip", v)} />
                       </div>
                     </th>
                     <th className="sticky left-[304px] z-20 bg-[#05112b] px-2.5 py-3 border-r-2 border-r-[#ffd000]/60 min-w-[68px] w-[68px] text-center text-[#ffd000]">
@@ -1581,68 +1581,68 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("platform")}>แพลตฟอร์ม{sortIndicator("platform")}</span>
-                        <ColumnFilterPopover title="แพลตฟอร์ม" options={["TikTok", "Facebook", "Instagram"]} selected={colFilters.platform} onApply={(v) => handleColFilterChange("platform", v)} />
+                        <ColumnFilterPopover columnKey="platform" title="แพลตฟอร์ม" options={["TikTok", "Facebook", "Instagram"]} selected={colFilters.platform} onApply={(v) => handleColFilterChange("platform", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("it_no")}>IT No.{sortIndicator("it_no")}</span>
-                        <ColumnFilterPopover title="IT No." options={tableOpts.it_no} selected={colFilters.it_no} onApply={(v) => handleColFilterChange("it_no", v)} />
+                        <ColumnFilterPopover columnKey="it_no" title="IT No." options={tableOpts.it_no} selected={colFilters.it_no} onApply={(v) => handleColFilterChange("it_no", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("target_id")}>Target ID{sortIndicator("target_id")}</span>
-                        <ColumnFilterPopover title="Target ID" options={tableOpts.target_id} selected={colFilters.target_id} onApply={(v) => handleColFilterChange("target_id", v)} />
+                        <ColumnFilterPopover columnKey="target_id" title="Target ID" options={tableOpts.target_id} selected={colFilters.target_id} onApply={(v) => handleColFilterChange("target_id", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("inst_id")}>INST ID{sortIndicator("inst_id")}</span>
-                        <ColumnFilterPopover title="INST ID" options={tableOpts.inst_id} selected={colFilters.inst_id} onApply={(v) => handleColFilterChange("inst_id", v)} />
+                        <ColumnFilterPopover columnKey="inst_id" title="INST ID" options={tableOpts.inst_id} selected={colFilters.inst_id} onApply={(v) => handleColFilterChange("inst_id", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("tpo_code")}>TPO code{sortIndicator("tpo_code")}</span>
-                        <ColumnFilterPopover title="TPO code" options={tableOpts.tpo_code} selected={colFilters.tpo_code} onApply={(v) => handleColFilterChange("tpo_code", v)} />
+                        <ColumnFilterPopover columnKey="tpo_code" title="TPO code" options={tableOpts.tpo_code} selected={colFilters.tpo_code} onApply={(v) => handleColFilterChange("tpo_code", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>เคส Scammer</span>
-                        <ColumnFilterPopover title="เคส Scammer" options={["Scammer", "(ว่าง)"]} selected={colFilters.scammer_case} onApply={(v) => handleColFilterChange("scammer_case", v)} />
+                        <ColumnFilterPopover columnKey="scammer_case" title="เคส Scammer" options={["Scammer", "(ว่าง)"]} selected={colFilters.scammer_case} onApply={(v) => handleColFilterChange("scammer_case", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>วันที่รับแจ้ง</span>
-                        <ColumnFilterPopover title="วันที่รับแจ้ง" options={tableOpts.reported_date} selected={colFilters.reported_date} onApply={(v) => handleColFilterChange("reported_date", v)} />
+                        <ColumnFilterPopover columnKey="reported_date" title="วันที่รับแจ้ง" options={tableOpts.reported_date} selected={colFilters.reported_date} onApply={(v) => handleColFilterChange("reported_date", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>ทีม</span>
-                        <ColumnFilterPopover title="ทีม" options={tableOpts.team} selected={colFilters.team} onApply={(v) => handleColFilterChange("team", v)} />
+                        <ColumnFilterPopover columnKey="team" title="ทีม" options={tableOpts.team} selected={colFilters.team} onApply={(v) => handleColFilterChange("team", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("account")}>บัญชี / ประเภท{sortIndicator("account")}</span>
-                        <ColumnFilterPopover title="บัญชี" options={tableOpts.account} selected={colFilters.account} onApply={(v) => handleColFilterChange("account", v)} />
+                        <ColumnFilterPopover columnKey="account" title="บัญชี" options={tableOpts.account} selected={colFilters.account} onApply={(v) => handleColFilterChange("account", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>ประเภทบัญชี Meta</span>
-                        <ColumnFilterPopover title="ประเภทบัญชี Meta" options={tableOpts.meta_type} selected={colFilters.meta_type} onApply={(v) => handleColFilterChange("meta_type", v)} />
+                        <ColumnFilterPopover columnKey="meta_type" title="ประเภทบัญชี Meta" options={tableOpts.meta_type} selected={colFilters.meta_type} onApply={(v) => handleColFilterChange("meta_type", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>เครือข่าย / ประเทศ</span>
-                        <ColumnFilterPopover title="เครือข่าย" options={tableOpts.network} selected={colFilters.network} onApply={(v) => handleColFilterChange("network", v)} />
-                        <ColumnFilterPopover title="ประเทศ" options={tableOpts.country} selected={colFilters.country} onApply={(v) => handleColFilterChange("country", v)} />
+                        <ColumnFilterPopover columnKey="network" title="เครือข่าย" options={tableOpts.network} selected={colFilters.network} onApply={(v) => handleColFilterChange("network", v)} />
+                        <ColumnFilterPopover columnKey="country" title="ประเทศ" options={tableOpts.country} selected={colFilters.country} onApply={(v) => handleColFilterChange("country", v)} />
                       </div>
                     </th>
                     <th className="px-2 py-3 text-center text-slate-300">ไม่มีข้อมูล IP</th>
@@ -1655,7 +1655,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>เลขหนังสือ</span>
-                        <ColumnFilterPopover title="เลขหนังสือ" options={tableOpts.letter} selected={colFilters.letter} onApply={(v) => handleColFilterChange("letter", v)} />
+                        <ColumnFilterPopover columnKey="letter" title="เลขหนังสือ" options={tableOpts.letter} selected={colFilters.letter} onApply={(v) => handleColFilterChange("letter", v)} />
                       </div>
                     </th>
                     <th className="px-3 py-3">ผลลัพธ์</th>

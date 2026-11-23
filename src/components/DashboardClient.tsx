@@ -653,14 +653,17 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
         setSyncMsg(`ตรวจสอบไม่สำเร็จ: ${checkBody.error || checkRes.status}`);
         return;
       }
+      const cutoffDmy = formatDateDMY(checkBody.cutoff_date);
       const pendingCount = Number(checkBody.pending_expired_count || 0);
       if (pendingCount === 0) {
-        setSyncMsg(`ไม่พบรายการ IP ที่เกิน 90 วัน (ก่อนวันที่ ${checkBody.cutoff_date}) ที่ยังไม่ได้ดำเนินการครับ`);
+        const msg = `ไม่พบรายการ IP ที่เกิน 90 วัน (ก่อนวันที่ ${cutoffDmy}) ที่ยังไม่ได้ดำเนินการครับ`;
+        setSyncMsg(msg);
+        window.alert(msg);
         setTimeout(() => setSyncMsg(""), 7000);
         return;
       }
       const confirmed = window.confirm(
-        `พบข้อมูลการใช้ IP ที่เกิน 90 วัน (ก่อนวันที่ ${checkBody.cutoff_date}) และยังไม่ได้ขอข้อมูลจาก ISP จำนวน ${fmt(pendingCount)} รายการ\n\nยืนยันอัปเดตติ๊ก "ขอข้อมูลไม่ได้" และหมายเหตุ "ข้อมูลเกิน 90 วัน" ทั้งหมดหรือไม่?`
+        `พบข้อมูลการใช้ IP ที่เกิน 90 วัน (ก่อนวันที่ ${cutoffDmy}) และยังไม่ได้ขอข้อมูลจาก ISP จำนวน ${fmt(pendingCount)} รายการ\n\nยืนยันอัปเดตติ๊ก "ขอข้อมูลไม่ได้" และหมายเหตุ "ข้อมูลเกิน 90 วัน" ทั้งหมดหรือไม่?`
       );
       if (!confirmed) {
         setSyncMsg("");
@@ -671,9 +674,12 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
       const body = await res.json();
       if (!res.ok) {
         setSyncMsg(`อัปเดตไม่สำเร็จ: ${body.error || res.status}`);
+        window.alert(`อัปเดตไม่สำเร็จ: ${body.error || res.status}`);
         return;
       }
-      setSyncMsg(`อัปเดตข้อมูล IP เกิน 90 วันสำเร็จ ${fmt(body.updated_count)} รายการ (ติ๊ก "ขอข้อมูลไม่ได้" + หมายเหตุ "ข้อมูลเกิน 90 วัน")`);
+      const doneMsg = `ดำเนินการเสร็จแล้ว! อัปเดตข้อมูล IP เกิน 90 วันสำเร็จ ${fmt(body.updated_count)} รายการ (ติ๊ก "ขอข้อมูลไม่ได้" + หมายเหตุ "ข้อมูลเกิน 90 วัน")`;
+      setSyncMsg(doneMsg);
+      window.alert(doneMsg);
       fetchEvents(true);
     } catch {
       setSyncMsg("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์");

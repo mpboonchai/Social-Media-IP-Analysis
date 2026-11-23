@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Download, Search, RefreshCw } from "lucide-react";
+import { formatDateDMY, formatDateTimeDMY } from "@/lib/date-format";
 
 interface ScammerCaseItem {
   id: number;
@@ -145,7 +146,7 @@ export default function ScammerCasesSheet() {
                   <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-white">{c.inst_id || "—"}</td>
                   <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-slate-300">{c.data_id || "—"}</td>
                   <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-slate-300">{c.tracking_code || "—"}</td>
-                  <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-[#ffd000]">{c.heppen_date || "—"}</td>
+                  <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-[#ffd000]">{formatDateDMY(c.heppen_date)}</td>
                   <td className="px-2.5 py-1.5 border-r border-[#163066] text-blue-200">{c.team || "—"}</td>
                   <td className="px-2.5 py-1.5 border-r border-[#163066]">
                     <span className="px-2 py-0.5 rounded bg-[#133273] text-[#ffd000] font-semibold">{c.platform}</span>
@@ -161,7 +162,7 @@ export default function ScammerCasesSheet() {
                     ) : "—"}
                   </td>
                   <td className="px-2.5 py-1.5 border-r border-[#163066] text-blue-100">{c.tracking_status || "—"}</td>
-                  <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-slate-300">{c.replied_at || "—"}</td>
+                  <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-slate-300">{formatDateTimeDMY(c.replied_at)}</td>
                   <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-emerald-300">{c.tpo_code || "—"}</td>
                   <td className="px-2.5 py-1.5 border-r border-[#163066] max-w-[220px] truncate text-slate-200" title={c.note || ""}>
                     {c.note || "—"}

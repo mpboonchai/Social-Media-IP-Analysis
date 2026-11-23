@@ -32,6 +32,7 @@ import ExcelManagerView, {
 import CountryIspStatsView from "./CountryIspStatsView";
 import ScammerCasesSheet from "./ScammerCasesSheet";
 import ZipUploadModal from "./ZipUploadModal";
+import { formatDateDMY, formatDateTimeDMY } from "@/lib/date-format";
 
 type IpEventRow = ExcelEventRow;
 
@@ -1522,7 +1523,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                     </div>
 
                     <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-blue-300">
-                      <span className="font-mono">{row.local_time || "—"}</span>
+                      <span className="font-mono">{formatDateTimeDMY(row.local_time)}</span>
                       <span>
                         {row.inst_id ? `INST: ${row.inst_id}` : ""}
                         {row.tpo_code ? ` · ${row.tpo_code}` : ""}
@@ -1555,18 +1556,27 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
               })}
             </div>
 
-            {/* Desktop Table (>= md) with Excel-style Column Filter Popovers on EVERY column */}
+            {/* Desktop Table (>= md) with FROZEN เวลา UTC+7, IP, Port + Excel-style Column Filter Popovers */}
             <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-xs whitespace-nowrap">
+              <table className="w-full text-left text-xs whitespace-nowrap border-collapse">
                 <thead className="bg-[#05112b] text-blue-200 border-b border-[#1d3a78]">
                   <tr>
-                    <th className="px-3 py-3">
+                    <th className="sticky left-0 z-20 bg-[#05112b] px-3 py-3 border-r border-[#1a346e] min-w-[156px] w-[156px]">
                       <div className="inline-flex items-center gap-1">
                         <span className="cursor-pointer hover:text-[#ffd000] inline-flex items-center gap-1" onClick={() => handleSort("local_time")}>
                           เวลา UTC+7 <ArrowUpDown className="w-3 h-3" />{sortIndicator("local_time")}
                         </span>
                         <ColumnFilterPopover title="วันที่ (UTC+7)" options={tableOpts.local_date} selected={colFilters.local_date} onApply={(v) => handleColFilterChange("local_date", v)} />
                       </div>
+                    </th>
+                    <th className="sticky left-[156px] z-20 bg-[#05112b] px-3 py-3 border-r border-[#1a346e] min-w-[148px] w-[148px]">
+                      <div className="inline-flex items-center gap-1">
+                        <span className="text-[#ffd000]">IP</span>
+                        <ColumnFilterPopover title="IP" options={tableOpts.ip} selected={colFilters.ip} onApply={(v) => handleColFilterChange("ip", v)} />
+                      </div>
+                    </th>
+                    <th className="sticky left-[304px] z-20 bg-[#05112b] px-2.5 py-3 border-r-2 border-r-[#ffd000]/60 min-w-[68px] w-[68px] text-center text-[#ffd000]">
+                      Port
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
@@ -1630,12 +1640,6 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                     </th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
-                        <span>IP / Port</span>
-                        <ColumnFilterPopover title="IP" options={tableOpts.ip} selected={colFilters.ip} onApply={(v) => handleColFilterChange("ip", v)} />
-                      </div>
-                    </th>
-                    <th className="px-3 py-3">
-                      <div className="inline-flex items-center gap-1">
                         <span>เครือข่าย / ประเทศ</span>
                         <ColumnFilterPopover title="เครือข่าย" options={tableOpts.network} selected={colFilters.network} onApply={(v) => handleColFilterChange("network", v)} />
                         <ColumnFilterPopover title="ประเทศ" options={tableOpts.country} selected={colFilters.country} onApply={(v) => handleColFilterChange("country", v)} />
@@ -1659,11 +1663,20 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#163066]">
-                  {(data?.records || []).map((row) => {
+                  {(data?.records || []).map((row, idx) => {
                     const st = statusBadge(row);
+                    const stickyBg = idx % 2 === 0 ? "bg-[#0a1d45]" : "bg-[#081738]";
                     return (
-                      <tr key={row.record_key} className="hover:bg-[#10285e]/70">
-                        <td className="px-3 py-2.5 font-mono text-blue-100">{row.local_time || "—"}</td>
+                      <tr key={row.record_key} className={`${stickyBg} hover:bg-[#10285e]/70`}>
+                        <td className={`sticky left-0 z-10 ${stickyBg} px-3 py-2.5 border-r border-[#163066] font-mono text-blue-100 min-w-[156px] w-[156px]`}>
+                          {formatDateTimeDMY(row.local_time)}
+                        </td>
+                        <td className={`sticky left-[156px] z-10 ${stickyBg} px-3 py-2.5 border-r border-[#163066] font-mono text-[#ffd000] font-semibold min-w-[148px] w-[148px] max-w-[148px] truncate`} title={row.ip || ""}>
+                          {row.ip || "—"}
+                        </td>
+                        <td className={`sticky left-[304px] z-10 ${stickyBg} px-2.5 py-2.5 border-r-2 border-r-[#ffd000]/60 font-mono text-blue-200 text-center min-w-[68px] w-[68px]`}>
+                          {row.port ?? "—"}
+                        </td>
                         <td className="px-3 py-2.5">
                           <span className="px-2 py-0.5 rounded bg-[#133273] text-[#ffd000] font-semibold">
                             {row.platform}
@@ -1680,7 +1693,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                             </span>
                           ) : "—"}
                         </td>
-                        <td className="px-3 py-2.5 font-mono text-blue-200">{row.reported_date || "—"}</td>
+                        <td className="px-3 py-2.5 font-mono text-blue-200">{formatDateDMY(row.reported_date)}</td>
                         <td className="px-3 py-2.5 text-blue-200">{row.team || "—"}</td>
                         <td className="px-3 py-2.5 max-w-[230px] truncate" title={row.account}>
                           <div className="text-white font-medium truncate">{row.account}</div>
@@ -1692,10 +1705,6 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                               {row.meta_account_type}
                             </span>
                           ) : "—"}
-                        </td>
-                        <td className="px-3 py-2.5 font-mono">
-                          <div className="text-[#ffd000] font-semibold">{row.ip || "—"}</div>
-                          <div className="text-[11px] text-blue-300">{row.port ? `Port ${row.port}` : ""}</div>
                         </td>
                         <td className="px-3 py-2.5 max-w-[210px] truncate" title={row.network}>
                           <div className="text-slate-100 truncate">{row.network || "—"}</div>

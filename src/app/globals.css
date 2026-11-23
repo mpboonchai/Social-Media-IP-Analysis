@@ -13,3 +13,14 @@ body {
   color: #eaf2ff;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
+
+/* Make native date picker calendar icon crisp white on dark CIB Navy inputs */
+input[type="date"] {
+  color-scheme: dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(2);
+  opacity: 0.95;
+  cursor: pointer;
+}

@@ -3,6 +3,7 @@
 import React, { useRef, useState } from "react";
 import { Save, Copy, CheckSquare, ArrowUpDown, RotateCcw, Download, FileSpreadsheet, Upload } from "lucide-react";
 import ColumnFilterPopover from "./ColumnFilterPopover";
+import { formatDateDMY, formatDateTimeDMY } from "@/lib/date-format";
 
 export interface ExcelEventRow {
   record_key: string;
@@ -395,6 +396,23 @@ export default function ExcelManagerView({
           <table className="w-full text-left text-xs border-collapse whitespace-nowrap">
             <thead className="bg-[#05112b] text-blue-200 sticky top-0 z-20 border-b border-[#ffd000]/40">
               <tr>
+                <th className="sticky left-0 z-30 bg-[#05112b] px-2.5 py-2.5 border-r border-[#1a346e] min-w-[156px] w-[156px]">
+                  <div className="inline-flex items-center gap-1">
+                    <span className="cursor-pointer hover:text-[#ffd000] inline-flex items-center gap-1" onClick={() => onSort("local_time")}>
+                      เวลา UTC+7 <ArrowUpDown className="w-3 h-3" />{sortIndicator("local_time")}
+                    </span>
+                    <ColumnFilterPopover title="วันที่ (UTC+7)" options={opts.local_date} selected={colFilters.local_date} onApply={(v) => onColFilterChange("local_date", v)} />
+                  </div>
+                </th>
+                <th className="sticky left-[156px] z-30 bg-[#05112b] px-2.5 py-2.5 border-r border-[#1a346e] min-w-[148px] w-[148px]">
+                  <div className="inline-flex items-center gap-1">
+                    <span className="text-[#ffd000]">IP</span>
+                    <ColumnFilterPopover title="IP" options={opts.ip} selected={colFilters.ip} onApply={(v) => onColFilterChange("ip", v)} />
+                  </div>
+                </th>
+                <th className="sticky left-[304px] z-30 bg-[#05112b] px-2 py-2.5 border-r-2 border-r-[#ffd000]/60 min-w-[68px] w-[68px] text-center text-[#ffd000]">
+                  Port
+                </th>
                 {isAdmin && (
                   <th className="px-2 py-2.5 border-r border-[#1a346e] text-center w-9">
                     <input
@@ -406,14 +424,6 @@ export default function ExcelManagerView({
                   </th>
                 )}
                 <th className="px-2 py-2.5 border-r border-[#1a346e] text-slate-400 text-center w-10">#</th>
-                <th className="px-2.5 py-2.5 border-r border-[#1a346e]">
-                  <div className="inline-flex items-center gap-1">
-                    <span className="cursor-pointer hover:text-[#ffd000] inline-flex items-center gap-1" onClick={() => onSort("local_time")}>
-                      เวลา UTC+7 <ArrowUpDown className="w-3 h-3" />{sortIndicator("local_time")}
-                    </span>
-                    <ColumnFilterPopover title="วันที่ (UTC+7)" options={opts.local_date} selected={colFilters.local_date} onApply={(v) => onColFilterChange("local_date", v)} />
-                  </div>
-                </th>
                 <th className="px-2.5 py-2.5 border-r border-[#1a346e]">เวลา UTC</th>
                 <th className="px-2.5 py-2.5 border-r border-[#1a346e]">
                   <div className="inline-flex items-center gap-1">
@@ -477,12 +487,6 @@ export default function ExcelManagerView({
                 </th>
                 <th className="px-2.5 py-2.5 border-r border-[#1a346e]">Page Admin</th>
                 <th className="px-2.5 py-2.5 border-r border-[#1a346e]">Meta Actor</th>
-                <th className="px-2.5 py-2.5 border-r border-[#1a346e]">
-                  <div className="inline-flex items-center gap-1">
-                    <span>IP / Port</span>
-                    <ColumnFilterPopover title="IP" options={opts.ip} selected={colFilters.ip} onApply={(v) => onColFilterChange("ip", v)} />
-                  </div>
-                </th>
                 <th className="px-2.5 py-2.5 border-r border-[#1a346e]">IP Type</th>
                 <th className="px-2.5 py-2.5 border-r border-[#1a346e]">
                   <div className="inline-flex items-center gap-1">
@@ -521,6 +525,13 @@ export default function ExcelManagerView({
                 const d = getRowDraft(row);
                 const isDirty = Boolean(drafts[row.record_key]);
                 const isSelected = selectedKeys.includes(row.record_key);
+                const stickyBg = isDirty
+                  ? "bg-[#24210f]"
+                  : isSelected
+                  ? "bg-[#15316e]"
+                  : idx % 2 === 0
+                  ? "bg-[#0a1d45]"
+                  : "bg-[#081738]";
                 return (
                   <tr
                     key={row.record_key}
@@ -534,14 +545,22 @@ export default function ExcelManagerView({
                         : "bg-[#081738]"
                     } hover:bg-[#122b63]/80 transition-colors`}
                   >
+                    <td className={`sticky left-0 z-10 ${stickyBg} px-2.5 py-1.5 border-r border-[#163066] font-mono text-blue-100 min-w-[156px] w-[156px] ${isDirty ? "border-l-2 border-l-[#ffd000]" : ""}`}>
+                      {formatDateTimeDMY(row.local_time)}
+                    </td>
+                    <td className={`sticky left-[156px] z-10 ${stickyBg} px-2.5 py-1.5 border-r border-[#163066] font-mono text-[#ffd000] font-semibold min-w-[148px] w-[148px] max-w-[148px] truncate`} title={row.ip || ""}>
+                      {row.ip || "—"}
+                    </td>
+                    <td className={`sticky left-[304px] z-10 ${stickyBg} px-2 py-1.5 border-r-2 border-r-[#ffd000]/60 font-mono text-blue-200 text-center min-w-[68px] w-[68px]`}>
+                      {row.port ?? "—"}
+                    </td>
                     {isAdmin && (
-                      <td className={`px-2 py-1.5 border-r border-[#163066] text-center ${isDirty ? "border-l-2 border-l-[#ffd000]" : ""}`}>
+                      <td className="px-2 py-1.5 border-r border-[#163066] text-center">
                         <input type="checkbox" checked={isSelected} onChange={() => toggleRow(row.record_key)} className="accent-[#ffd000]" />
                       </td>
                     )}
                     <td className="px-2 py-1.5 border-r border-[#163066] text-center font-mono text-slate-400">{idx + 1}</td>
-                    <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-blue-100">{row.local_time || "—"}</td>
-                    <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-slate-400">{row.utc_at || "—"}</td>
+                    <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-slate-400">{formatDateTimeDMY(row.utc_at)}</td>
                     <td className="px-2.5 py-1.5 border-r border-[#163066]">
                       <span className="px-2 py-0.5 rounded bg-[#133273] text-[#ffd000] font-medium">{row.platform}</span>
                     </td>
@@ -554,15 +573,12 @@ export default function ExcelManagerView({
                         <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500/40">{row.scammer_case}</span>
                       ) : "—"}
                     </td>
-                    <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-slate-300">{row.reported_date || "—"}</td>
+                    <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-slate-300">{formatDateDMY(row.reported_date)}</td>
                     <td className="px-2.5 py-1.5 border-r border-[#163066] text-slate-300">{row.team || "—"}</td>
                     <td className="px-2.5 py-1.5 border-r border-[#163066] max-w-[200px] truncate text-white" title={row.account}>{row.account}</td>
                     <td className="px-2.5 py-1.5 border-r border-[#163066] text-blue-200">{row.meta_account_type || "—"}</td>
                     <td className="px-2.5 py-1.5 border-r border-[#163066] max-w-[160px] truncate text-blue-200" title={row.page_admin || ""}>{row.page_admin || "—"}</td>
                     <td className="px-2.5 py-1.5 border-r border-[#163066] max-w-[160px] truncate text-slate-300" title={row.meta_actor_display || ""}>{row.meta_actor_display || "—"}</td>
-                    <td className="px-2.5 py-1.5 border-r border-[#163066] font-mono text-[#ffd000]">
-                      {row.ip || "—"}{row.port ? `:${row.port}` : ""}
-                    </td>
                     <td className="px-2.5 py-1.5 border-r border-[#163066] text-slate-300">{row.ip_type || "—"}</td>
                     <td className="px-2.5 py-1.5 border-r border-[#163066] max-w-[180px] truncate text-slate-100" title={row.network}>{row.network || "—"}</td>
                     <td className="px-2.5 py-1.5 border-r border-[#163066] max-w-[180px] truncate text-slate-300" title={row.owner}>{row.owner || "—"}</td>

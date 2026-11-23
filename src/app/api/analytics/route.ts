@@ -35,6 +35,8 @@ export async function GET(req: NextRequest) {
     request_status: (sp.get("request_status") || "").trim() || undefined,
     date_from: (sp.get("date_from") || "").trim() || undefined,
     date_to: (sp.get("date_to") || "").trim() || undefined,
+    reported_from: (sp.get("reported_from") || "").trim() || undefined,
+    reported_to: (sp.get("reported_to") || "").trim() || undefined,
     scammer_only: sp.get("scammer_only") === "true",
     case_window_only: sp.get("case_window_only") === "true",
   };

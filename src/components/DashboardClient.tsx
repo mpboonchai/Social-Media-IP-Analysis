@@ -187,6 +187,8 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   const [requestStatus, setRequestStatus] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [reportedFrom, setReportedFrom] = useState("");
+  const [reportedTo, setReportedTo] = useState("");
   const [scammerOnly, setScammerOnly] = useState(false);
   const [caseWindowOnly, setCaseWindowOnly] = useState(false);
 
@@ -265,6 +267,8 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           requestStatus,
           dateFrom,
           dateTo,
+          reportedFrom,
+          reportedTo,
           scammerOnly,
           caseWindowOnly,
           colFilters,
@@ -290,6 +294,8 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           ...(requestStatus ? { request_status: requestStatus } : {}),
           ...(dateFrom ? { date_from: dateFrom } : {}),
           ...(dateTo ? { date_to: dateTo } : {}),
+          ...(reportedFrom ? { reported_from: reportedFrom } : {}),
+          ...(reportedTo ? { reported_to: reportedTo } : {}),
           ...(scammerOnly ? { scammer_only: "true" } : {}),
           ...(caseWindowOnly ? { case_window_only: "true" } : {}),
           ...colParams,
@@ -339,6 +345,8 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
       requestStatus,
       dateFrom,
       dateTo,
+      reportedFrom,
+      reportedTo,
       scammerOnly,
       caseWindowOnly,
       colFilters,
@@ -457,6 +465,8 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
       ...(requestStatus ? { request_status: requestStatus } : {}),
       ...(dateFrom ? { date_from: dateFrom } : {}),
       ...(dateTo ? { date_to: dateTo } : {}),
+      ...(reportedFrom ? { reported_from: reportedFrom } : {}),
+      ...(reportedTo ? { reported_to: reportedTo } : {}),
       ...(scammerOnly ? { scammer_only: "true" } : {}),
       ...(caseWindowOnly ? { case_window_only: "true" } : {}),
     });
@@ -1012,21 +1022,43 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
               <option value="no_ip_data">ไม่มีข้อมูล IP</option>
             </select>
 
-            <div className="grid grid-cols-2 gap-1.5 sm:col-span-2 md:col-span-2 xl:col-span-1">
-              <input
-                type="date"
-                aria-label="ตั้งแต่วันที่"
-                value={dateFrom}
-                onChange={(e) => { setOffset(0); setDateFrom(e.target.value); }}
-                className="rounded-lg bg-[#05112b] border border-[#1d3a78] px-2 py-2 text-xs text-white"
-              />
-              <input
-                type="date"
-                aria-label="ถึงวันที่"
-                value={dateTo}
-                onChange={(e) => { setOffset(0); setDateTo(e.target.value); }}
-                className="rounded-lg bg-[#05112b] border border-[#1d3a78] px-2 py-2 text-xs text-white"
-              />
+            <div className="sm:col-span-2 md:col-span-4 xl:col-span-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1 border-t border-[#1d3a78]/60">
+              <label className="flex flex-col gap-1 text-[11px] text-blue-200">
+                <span className="font-semibold text-[#ffd000]">วันที่รับแจ้ง (ตั้งแต่)</span>
+                <input
+                  type="date"
+                  value={reportedFrom}
+                  onChange={(e) => { setOffset(0); setReportedFrom(e.target.value); }}
+                  className="rounded-lg bg-[#05112b] border border-[#1d3a78] px-2.5 py-1.5 text-xs text-white focus:border-[#ffd000]"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-blue-200">
+                <span className="font-semibold text-[#ffd000]">วันที่รับแจ้ง (ถึง)</span>
+                <input
+                  type="date"
+                  value={reportedTo}
+                  onChange={(e) => { setOffset(0); setReportedTo(e.target.value); }}
+                  className="rounded-lg bg-[#05112b] border border-[#1d3a78] px-2.5 py-1.5 text-xs text-white focus:border-[#ffd000]"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-blue-200">
+                <span className="font-semibold text-sky-300">วันที่ของข้อมูล IP (ตั้งแต่)</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => { setOffset(0); setDateFrom(e.target.value); }}
+                  className="rounded-lg bg-[#05112b] border border-[#1d3a78] px-2.5 py-1.5 text-xs text-white focus:border-[#ffd000]"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-blue-200">
+                <span className="font-semibold text-sky-300">วันที่ของข้อมูล IP (ถึง)</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => { setOffset(0); setDateTo(e.target.value); }}
+                  className="rounded-lg bg-[#05112b] border border-[#1d3a78] px-2.5 py-1.5 text-xs text-white focus:border-[#ffd000]"
+                />
+              </label>
             </div>
           </div>
 
@@ -1061,6 +1093,8 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                 setRequestStatus("");
                 setDateFrom("");
                 setDateTo("");
+                setReportedFrom("");
+                setReportedTo("");
                 setScammerOnly(false);
                 setCaseWindowOnly(false);
                 setColFilters(EMPTY_COL_FILTERS);

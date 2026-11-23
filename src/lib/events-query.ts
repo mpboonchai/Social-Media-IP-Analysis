@@ -9,6 +9,8 @@ export interface EventFilterParams {
   request_status?: string;
   date_from?: string;
   date_to?: string;
+  reported_from?: string;
+  reported_to?: string;
   scammer_only?: boolean;
   case_window_only?: boolean;
 }
@@ -42,6 +44,14 @@ export function buildEventWhereClause(filters: EventFilterParams): { whereSql: s
   if (filters.date_to) {
     where.push(`e.event_local <= ?`);
     params.push(`${filters.date_to} 23:59:59`);
+  }
+  if (filters.reported_from) {
+    where.push(`e.reported_date <> '' AND LEFT(e.reported_date, 10) >= ?`);
+    params.push(filters.reported_from);
+  }
+  if (filters.reported_to) {
+    where.push(`e.reported_date <> '' AND LEFT(e.reported_date, 10) <= ?`);
+    params.push(filters.reported_to);
   }
   if (filters.scammer_only) {
     where.push(`e.scammer_case = 'Scammer'`);

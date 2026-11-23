@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
   const requestStatus = (sp.get("request_status") || "").trim();
   const dateFrom = (sp.get("date_from") || "").trim();
   const dateTo = (sp.get("date_to") || "").trim();
+  const reportedFrom = (sp.get("reported_from") || "").trim();
+  const reportedTo = (sp.get("reported_to") || "").trim();
   const scammerOnly = sp.get("scammer_only") === "true";
   const caseWindowOnly = sp.get("case_window_only") === "true";
 
@@ -107,6 +109,14 @@ export async function GET(req: NextRequest) {
   if (dateTo) {
     where.push(`e.event_local <= ?`);
     params.push(`${dateTo} 23:59:59`);
+  }
+  if (reportedFrom) {
+    where.push(`e.reported_date <> '' AND LEFT(e.reported_date, 10) >= ?`);
+    params.push(reportedFrom);
+  }
+  if (reportedTo) {
+    where.push(`e.reported_date <> '' AND LEFT(e.reported_date, 10) <= ?`);
+    params.push(reportedTo);
   }
   if (scammerOnly) {
     where.push(`e.scammer_case = 'Scammer'`);
@@ -326,6 +336,8 @@ export async function GET(req: NextRequest) {
     requestStatus,
     dateFrom,
     dateTo,
+    reportedFrom,
+    reportedTo,
     scammerOnly,
     caseWindowOnly,
     colLocalDate,

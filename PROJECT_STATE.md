@@ -10,10 +10,12 @@
 - **เทคโนโลยีหลัก**: Next.js 15 (App Router, TypeScript) + Tailwind CSS + MySQL 8.0 / TiDB Cloud Serverless
 - **สถานะปัจจุบัน**:
   - **Deploy ขึ้น Production เรียบร้อยแล้ว** (Vercel + TiDB Cloud Serverless 100% Free Tier)
-  - โค้ดทั้งหมดเสร็จสมบูรณ์ (Auth, Upload ZIP, RDAP Auto-lookup, Search/Filter, CSV Export 3 ชุด, PPTX Report 17 สไลด์, User Management, Account Completion)
-  - **Performance Optimization**: Subquery-first PK pagination (เร็วขึ้น ~14 เท่า), `Promise.all` parallel queries, Pre-aggregated RDAP query, In-memory 60s stats cache + `skip_stats=1` pagination, Search debounce 350ms
-  - **Responsive UI (Mobile + Desktop)**: เมนูแบบพับเก็บได้บนมือถือ, การ์ดแสดงรายการบนหน้าจอเล็กคู่กับตารางเต็มรูปแบบบน Desktop, Modal แบบเลื่อนได้บนมือถือ
-  - Unit Tests: 6/6 ผ่าน
+  - **ธีม & แบรนด์ตำรวจสอบสวนกลาง (CIB)**: ธีมสีน้ำเงินเข้ม-เหลืองทอง (`#05112b` / `#ffd000`) พร้อมโลโก้ **TCSD** (`/logos/tcsd-logo.png`) และ **ACSC** (`/logos/acsc-logo.png`)
+  - **แดชบอร์ดครบถ้วนเทียบเท่าระบบเดิม**: แถบสถานะข้อมูล, 5 KPI Cards, 2 Request Coverage Cards (`สรุปตามบัญชี Account` + `สรุปตามเคส TPO`), 3 Visual Cards (`Network Distribution`, `Country Signal Donut Chart`, `Request Tracking 5 แถบ`), ตัวกรองหัวคอลัมน์แบบ Excel Popover
+  - **หน้าจัดการข้อมูลแบบตาราง Excel (`ExcelManagerView`)**: แก้ไขข้อมูลในเซลล์ได้โดยตรง (Inline Edit), เลือกหลายแถวเพื่อกำหนดสถานะ/เลขหนังสือพร้อมกัน (Bulk Apply via `/api/events/bulk`), เรียงคอลัมน์, กรองหัวคอลัมน์แบบ Excel, คัดลอกวางลง Microsoft Excel (Ctrl+V) ได้ทันที
+  - **ระบบอัปโหลด ZIP (META & TikTok แยกชัดเจน)**: เลือกแท็บ `META ZIP`, `TikTok ZIP` หรือ `ตรวจจับอัตโนมัติ`, จับคู่เคส Scammer อัตโนมัติ, ดึง RDAP อัตโนมัติ และ Insert แบบ Chunked ลง TiDB Cloud
+  - **Performance & Mobile Responsive**: Subquery-first PK pagination (เร็วขึ้น ~14 เท่า), `Promise.all`, 60s Cache + `skip_stats=1`, Search debounce 350ms, Mobile Menu Drawer + Card List
+  - Unit Tests: 6/6 ผ่าน (ทดสอบกับไฟล์จริง META 5 ZIP + TikTok 5 ZIP + Scammer Excel)
   - ข้อมูลระบบเดิมทั้งหมด (608,636 รายการ) ย้ายขึ้น TiDB Cloud เรียบร้อย 100%
 
 ---

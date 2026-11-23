@@ -5,12 +5,38 @@ import { getSessionUser } from "@/lib/auth";
 import { ipToBuffer } from "@/lib/ip-utils";
 import { getCachedEventStats, setCachedEventStats } from "@/lib/events-cache";
 
+const SORT_COLUMNS: Record<string, string> = {
+  id: "e.id",
+  local_time: "e.event_local",
+  platform: "e.platform",
+  it_no: "e.it_no",
+  target_id: "sa.target_id",
+  inst_id: "e.inst_id",
+  tpo_code: "e.tpo_code",
+  scammer_case: "e.scammer_case",
+  reported_date: "e.reported_date",
+  team: "e.team",
+  account: "sa.account_name",
+  ip: "e.ip_bin",
+  network: "r.network_name",
+  country: "r.country",
+  letter_number: "t.letter_number",
+};
+
+function parseCsvParam(val: string | null): string[] {
+  if (!val) return [];
+  return val
+    .split("||")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const sp = req.nextUrl.searchParams;
-  const limit = Math.min(100, Math.max(1, Number(sp.get("limit") || 25)));
+  const limit = Math.min(200, Math.max(1, Number(sp.get("limit") || 25)));
   const offset = Math.max(0, Number(sp.get("offset") || 0));
   const skipStats = sp.get("skip_stats") === "1";
 
@@ -25,12 +51,24 @@ export async function GET(req: NextRequest) {
   const scammerOnly = sp.get("scammer_only") === "true";
   const caseWindowOnly = sp.get("case_window_only") === "true";
 
+  // Excel-style multi-value column filters (delimited by "||")
+  const colPlatform = parseCsvParam(sp.get("col_platform"));
+  const colTeam = parseCsvParam(sp.get("col_team"));
+  const colReportedDate = parseCsvParam(sp.get("col_reported_date"));
+  const colScammerCase = parseCsvParam(sp.get("col_scammer_case"));
+  const colMetaType = parseCsvParam(sp.get("col_meta_type"));
+
+  // Sorting
+  const sortByRaw = (sp.get("sort_by") || "id").trim();
+  const sortDir = sp.get("sort_dir") === "asc" ? "ASC" : "DESC";
+  const sortExpr = SORT_COLUMNS[sortByRaw] || "e.id";
+
   const where: string[] = [];
   const params: unknown[] = [];
 
-  let needsSaJoin = false;
-  let needsRdapJoin = false;
-  let needsTrackingJoin = false;
+  let needsSaJoin = sortExpr.startsWith("sa.");
+  let needsRdapJoin = sortExpr.startsWith("r.");
+  let needsTrackingJoin = sortExpr.startsWith("t.");
 
   if (platform === "META") {
     where.push(`e.platform IN ('Facebook', 'Instagram')`);
@@ -90,6 +128,33 @@ export async function GET(req: NextRequest) {
     needsTrackingJoin = true;
   }
 
+  // Apply Excel-style column filters
+  if (colPlatform.length) {
+    where.push(`e.platform IN (${colPlatform.map(() => "?").join(",")})`);
+    params.push(...colPlatform);
+  }
+  if (colTeam.length) {
+    const vals = colTeam.map((v) => (v === "(ว่าง)" ? "" : v));
+    where.push(`COALESCE(e.team, '') IN (${vals.map(() => "?").join(",")})`);
+    params.push(...vals);
+  }
+  if (colReportedDate.length) {
+    const vals = colReportedDate.map((v) => (v === "(ว่าง)" ? "" : v));
+    where.push(`COALESCE(e.reported_date, '') IN (${vals.map(() => "?").join(",")})`);
+    params.push(...vals);
+  }
+  if (colScammerCase.length) {
+    const vals = colScammerCase.map((v) => (v === "(ว่าง)" ? "" : v));
+    where.push(`COALESCE(e.scammer_case, '') IN (${vals.map(() => "?").join(",")})`);
+    params.push(...vals);
+  }
+  if (colMetaType.length) {
+    const vals = colMetaType.map((v) => (v === "(ว่าง)" ? "" : v));
+    where.push(`COALESCE(sa.meta_account_type, '') IN (${vals.map(() => "?").join(",")})`);
+    params.push(...vals);
+    needsSaJoin = true;
+  }
+
   if (search) {
     const ipParsed = ipToBuffer(search);
     if (ipParsed) {
@@ -127,8 +192,6 @@ export async function GET(req: NextRequest) {
 
   const pool = getPool();
 
-  // Fast records query: when filtering only on ip_events columns (including unfiltered),
-  // paginate ip_events by PK first, then join only the 25 rows (14x faster on TiDB).
   const recordsSelect = `
     SELECT
       LOWER(HEX(e.record_key)) AS record_key,
@@ -169,27 +232,27 @@ export async function GET(req: NextRequest) {
       COALESCE(t.entity_phone, '') AS entity_phone
   `;
 
-  const recordsPromise = isEventOnlyFilter
-    ? pool.query<mysql.RowDataPacket[]>(
-        `${recordsSelect}
-         FROM (
-           SELECT e.* FROM ip_events e ${whereSql} ORDER BY e.id DESC LIMIT ? OFFSET ?
-         ) e
-         JOIN social_accounts sa ON sa.id = e.account_id
-         LEFT JOIN rdap_networks r ON r.id = e.rdap_network_id
-         LEFT JOIN ip_request_tracking t ON t.ip_event_id = e.id
-         ORDER BY e.id DESC`,
-        [...params, limit, offset]
-      )
-    : pool.query<mysql.RowDataPacket[]>(
-        `${recordsSelect}
-         ${fullFrom} ${whereSql}
-         ORDER BY e.id DESC
-         LIMIT ? OFFSET ?`,
-        [...params, limit, offset]
-      );
+  const recordsPromise =
+    isEventOnlyFilter && sortExpr.startsWith("e.")
+      ? pool.query<mysql.RowDataPacket[]>(
+          `${recordsSelect}
+           FROM (
+             SELECT e.* FROM ip_events e ${whereSql} ORDER BY ${sortExpr} ${sortDir} LIMIT ? OFFSET ?
+           ) e
+           JOIN social_accounts sa ON sa.id = e.account_id
+           LEFT JOIN rdap_networks r ON r.id = e.rdap_network_id
+           LEFT JOIN ip_request_tracking t ON t.ip_event_id = e.id
+           ORDER BY ${sortExpr} ${sortDir}`,
+          [...params, limit, offset]
+        )
+      : pool.query<mysql.RowDataPacket[]>(
+          `${recordsSelect}
+           ${fullFrom} ${whereSql}
+           ORDER BY ${sortExpr} ${sortDir}
+           LIMIT ? OFFSET ?`,
+          [...params, limit, offset]
+        );
 
-  // If client only paginated and already has KPI/charts, return records immediately
   if (skipStats) {
     const [records] = await recordsPromise;
     return NextResponse.json({
@@ -199,7 +262,6 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Check 60s in-memory cache for KPI + Top Networks + Top Countries
   const cacheKey = JSON.stringify({
     search,
     platform,
@@ -211,6 +273,11 @@ export async function GET(req: NextRequest) {
     dateTo,
     scammerOnly,
     caseWindowOnly,
+    colPlatform,
+    colTeam,
+    colReportedDate,
+    colScammerCase,
+    colMetaType,
   });
 
   const cached = getCachedEventStats(cacheKey);
@@ -218,8 +285,12 @@ export async function GET(req: NextRequest) {
     const [records] = await recordsPromise;
     return NextResponse.json({
       kpi: cached.kpi,
+      account_coverage: cached.account_coverage,
+      tpo_coverage: cached.tpo_coverage,
+      tracking_summary: cached.tracking_summary,
       top_networks: cached.top_networks,
       top_countries: cached.top_countries,
+      filter_options: cached.filter_options,
       records,
       pagination: {
         limit,
@@ -230,7 +301,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Compute stats in parallel with records
+  // Parallel KPI + Request Coverage + RDAP pre-aggregation
   const kpiPromise: Promise<Record<string, unknown>> = isUnfiltered
     ? Promise.all([
         pool.query<mysql.RowDataPacket[]>(
@@ -238,16 +309,23 @@ export async function GET(req: NextRequest) {
              COUNT(*) AS total_events,
              COUNT(DISTINCT account_id) AS unique_accounts,
              COUNT(DISTINCT ip_bin) AS unique_ips,
-             SUM(CASE WHEN scammer_case = 'Scammer' THEN 1 ELSE 0 END) AS scammer_events
+             SUM(CASE WHEN scammer_case = 'Scammer' THEN 1 ELSE 0 END) AS scammer_events,
+             SUM(CASE WHEN no_ip_data = 1 THEN 1 ELSE 0 END) AS no_ip_data_count,
+             COUNT(DISTINCT CONCAT(account_id, '|', COALESCE(reported_date, ''))) AS acc_date_total,
+             COUNT(DISTINCT NULLIF(tpo_code, '')) AS tpo_total
            FROM ip_events`
         ),
         pool.query<mysql.RowDataPacket[]>(
           `SELECT
-             SUM(CASE WHEN requested = 1 THEN 1 ELSE 0 END) AS requested_count,
-             SUM(CASE WHEN unavailable = 1 THEN 1 ELSE 0 END) AS unavailable_count,
-             SUM(CASE WHEN replied = 1 THEN 1 ELSE 0 END) AS replied_count,
-             SUM(CASE WHEN received = 1 THEN 1 ELSE 0 END) AS received_count
-           FROM ip_request_tracking`
+             SUM(CASE WHEN t.requested = 1 THEN 1 ELSE 0 END) AS requested_count,
+             SUM(CASE WHEN t.unavailable = 1 THEN 1 ELSE 0 END) AS unavailable_count,
+             SUM(CASE WHEN t.replied = 1 THEN 1 ELSE 0 END) AS replied_count,
+             SUM(CASE WHEN t.received = 1 THEN 1 ELSE 0 END) AS received_count,
+             COUNT(DISTINCT NULLIF(t.letter_number, '')) AS distinct_letters,
+             COUNT(DISTINCT CASE WHEN t.requested = 1 THEN CONCAT(e.account_id, '|', COALESCE(e.reported_date, '')) END) AS acc_date_requested,
+             COUNT(DISTINCT CASE WHEN t.requested = 1 AND e.tpo_code <> '' THEN e.tpo_code END) AS tpo_requested
+           FROM ip_request_tracking t
+           JOIN ip_events e ON e.id = t.ip_event_id`
         ),
       ]).then(([[evRows], [trRows]]) => ({
         ...(evRows[0] as Record<string, unknown>),
@@ -255,6 +333,9 @@ export async function GET(req: NextRequest) {
         unavailable_count: trRows[0]?.unavailable_count ?? 0,
         replied_count: trRows[0]?.replied_count ?? 0,
         received_count: trRows[0]?.received_count ?? 0,
+        distinct_letters: trRows[0]?.distinct_letters ?? 0,
+        acc_date_requested: trRows[0]?.acc_date_requested ?? 0,
+        tpo_requested: trRows[0]?.tpo_requested ?? 0,
       }))
     : pool
         .query<mysql.RowDataPacket[]>(
@@ -266,7 +347,13 @@ export async function GET(req: NextRequest) {
              SUM(CASE WHEN t.unavailable = 1 THEN 1 ELSE 0 END) AS unavailable_count,
              SUM(CASE WHEN t.replied = 1 THEN 1 ELSE 0 END) AS replied_count,
              SUM(CASE WHEN t.received = 1 THEN 1 ELSE 0 END) AS received_count,
-             SUM(CASE WHEN e.scammer_case = 'Scammer' THEN 1 ELSE 0 END) AS scammer_events
+             SUM(CASE WHEN e.scammer_case = 'Scammer' THEN 1 ELSE 0 END) AS scammer_events,
+             SUM(CASE WHEN e.no_ip_data = 1 THEN 1 ELSE 0 END) AS no_ip_data_count,
+             COUNT(DISTINCT NULLIF(t.letter_number, '')) AS distinct_letters,
+             COUNT(DISTINCT CONCAT(e.account_id, '|', COALESCE(e.reported_date, ''))) AS acc_date_total,
+             COUNT(DISTINCT CASE WHEN t.requested = 1 THEN CONCAT(e.account_id, '|', COALESCE(e.reported_date, '')) END) AS acc_date_requested,
+             COUNT(DISTINCT NULLIF(e.tpo_code, '')) AS tpo_total,
+             COUNT(DISTINCT CASE WHEN t.requested = 1 AND e.tpo_code <> '' THEN e.tpo_code END) AS tpo_requested
            FROM ip_events e
            ${needsSaJoin ? "JOIN social_accounts sa ON sa.id = e.account_id" : ""}
            ${needsRdapJoin ? "LEFT JOIN rdap_networks r ON r.id = e.rdap_network_id" : ""}
@@ -276,7 +363,6 @@ export async function GET(req: NextRequest) {
         )
         .then(([rows]) => (rows[0] as Record<string, unknown>) || {});
 
-  // Single pre-aggregated RDAP query computes BOTH top_networks & top_countries at once
   const rdapAggPromise = pool.query<mysql.RowDataPacket[]>(
     `SELECT
        COALESCE(NULLIF(r.network_name, ''), 'ไม่ระบุ') AS network_name,
@@ -291,7 +377,7 @@ export async function GET(req: NextRequest) {
     params
   );
 
-  const [[records], kpi, [rdapRows]] = await Promise.all([
+  const [[records], kpiRaw, [rdapRows]] = await Promise.all([
     recordsPromise,
     kpiPromise,
     rdapAggPromise,
@@ -307,31 +393,69 @@ export async function GET(req: NextRequest) {
     countryMap.set(cLabel, (countryMap.get(cLabel) || 0) + cnt);
   }
 
-  const topNetworks = Array.from(netMap.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6)
-    .map(([label, value]) => ({ label, value }));
+  const sortedNets = Array.from(netMap.entries()).sort((a, b) => b[1] - a[1]);
+  const sortedCountries = Array.from(countryMap.entries()).sort((a, b) => b[1] - a[1]);
 
-  const topCountries = Array.from(countryMap.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6)
-    .map(([label, value]) => ({ label, value }));
+  const topNetworks = sortedNets.slice(0, 6).map(([label, value]) => ({ label, value }));
+  const topCountries = sortedCountries.slice(0, 6).map(([label, value]) => ({ label, value }));
+
+  const filterOptions = {
+    countries: sortedCountries.map(([l]) => l).filter((l) => l !== "ไม่ระบุ").slice(0, 40),
+    networks: sortedNets.map(([l]) => l).filter((l) => l !== "ไม่ระบุ").slice(0, 50),
+  };
+
+  const accTotal = Number(kpiRaw.acc_date_total || 0);
+  const accReq = Number(kpiRaw.acc_date_requested || 0);
+  const tpoTotal = Number(kpiRaw.tpo_total || 0);
+  const tpoReq = Number(kpiRaw.tpo_requested || 0);
+
+  const accountCoverage = {
+    total: accTotal,
+    requested: accReq,
+    pending: Math.max(0, accTotal - accReq),
+    pct: accTotal > 0 ? Math.round((accReq / accTotal) * 100) : 0,
+  };
+
+  const tpoCoverage = {
+    total: tpoTotal,
+    requested: tpoReq,
+    pending: Math.max(0, tpoTotal - tpoReq),
+    pct: tpoTotal > 0 ? Math.round((tpoReq / tpoTotal) * 100) : 0,
+  };
+
+  const trackingSummary = {
+    no_ip_data_count: Number(kpiRaw.no_ip_data_count || 0),
+    unavailable_count: Number(kpiRaw.unavailable_count || 0),
+    requested_count: Number(kpiRaw.requested_count || 0),
+    replied_count: Number(kpiRaw.replied_count || 0),
+    received_count: Number(kpiRaw.received_count || 0),
+    distinct_letters: Number(kpiRaw.distinct_letters || 0),
+    total_networks: sortedNets.filter(([l]) => l !== "ไม่ระบุ").length,
+  };
 
   setCachedEventStats(cacheKey, {
-    kpi,
+    kpi: kpiRaw,
+    account_coverage: accountCoverage,
+    tpo_coverage: tpoCoverage,
+    tracking_summary: trackingSummary,
     top_networks: topNetworks,
     top_countries: topCountries,
+    filter_options: filterOptions,
   });
 
   return NextResponse.json({
-    kpi,
+    kpi: kpiRaw,
+    account_coverage: accountCoverage,
+    tpo_coverage: tpoCoverage,
+    tracking_summary: trackingSummary,
     top_networks: topNetworks,
     top_countries: topCountries,
+    filter_options: filterOptions,
     records,
     pagination: {
       limit,
       offset,
-      total: Number(kpi?.total_events || 0),
+      total: Number(kpiRaw?.total_events || 0),
     },
   });
 }

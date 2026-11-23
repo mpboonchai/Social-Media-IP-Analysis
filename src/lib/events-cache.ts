@@ -1,7 +1,22 @@
 export interface CachedEventStats {
   kpi: Record<string, unknown>;
+  account_coverage: { total: number; requested: number; pending: number; pct: number };
+  tpo_coverage: { total: number; requested: number; pending: number; pct: number };
+  tracking_summary: {
+    no_ip_data_count: number;
+    unavailable_count: number;
+    requested_count: number;
+    replied_count: number;
+    received_count: number;
+    distinct_letters: number;
+    total_networks: number;
+  };
   top_networks: Array<{ label: string; value: number }>;
   top_countries: Array<{ label: string; value: number }>;
+  filter_options: {
+    countries: string[];
+    networks: string[];
+  };
   expiresAt: number;
 }
 

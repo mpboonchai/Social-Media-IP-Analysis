@@ -20,6 +20,7 @@ import {
   ArrowUpDown,
   BarChart3,
   ShieldAlert,
+  Clock,
 } from "lucide-react";
 import type { SessionUser } from "@/lib/auth";
 import ColumnFilterPopover from "./ColumnFilterPopover";
@@ -552,6 +553,80 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
     }
   }
 
+  async function handleExpire90Days() {
+    setSyncMsg("กำลังตรวจสอบรายการ IP ที่เกิน 90 วันและยังไม่ได้ขอข้อมูลจาก ISP...");
+    try {
+      const checkRes = await fetch("/api/admin/events/expire-90d", { cache: "no-store" });
+      const checkBody = await checkRes.json();
+      if (!checkRes.ok) {
+        setSyncMsg(`ตรวจสอบไม่สำเร็จ: ${checkBody.error || checkRes.status}`);
+        return;
+      }
+      const pendingCount = Number(checkBody.pending_expired_count || 0);
+      if (pendingCount === 0) {
+        setSyncMsg(`ไม่พบรายการ IP ที่เกิน 90 วัน (ก่อนวันที่ ${checkBody.cutoff_date}) ที่ยังไม่ได้ดำเนินการครับ`);
+        setTimeout(() => setSyncMsg(""), 7000);
+        return;
+      }
+      const confirmed = window.confirm(
+        `พบข้อมูลการใช้ IP ที่เกิน 90 วัน (ก่อนวันที่ ${checkBody.cutoff_date}) และยังไม่ได้ขอข้อมูลจาก ISP จำนวน ${fmt(pendingCount)} รายการ\n\nยืนยันอัปเดตติ๊ก "ขอข้อมูลไม่ได้" และหมายเหตุ "ข้อมูลเกิน 90 วัน" ทั้งหมดหรือไม่?`
+      );
+      if (!confirmed) {
+        setSyncMsg("");
+        return;
+      }
+      setSyncMsg(`กำลังอัปเดต ${fmt(pendingCount)} รายการเป็น "ขอข้อมูลไม่ได้ (ข้อมูลเกิน 90 วัน)"...`);
+      const res = await fetch("/api/admin/events/expire-90d", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) {
+        setSyncMsg(`อัปเดตไม่สำเร็จ: ${body.error || res.status}`);
+        return;
+      }
+      setSyncMsg(`อัปเดตข้อมูล IP เกิน 90 วันสำเร็จ ${fmt(body.updated_count)} รายการ (ติ๊ก "ขอข้อมูลไม่ได้" + หมายเหตุ "ข้อมูลเกิน 90 วัน")`);
+      fetchEvents(true);
+    } catch {
+      setSyncMsg("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์");
+    }
+  }
+
+  async function handleQuickToggleCheckbox(
+    row: IpEventRow,
+    field: "unavailable" | "requested" | "replied" | "received" | "no_ip_request_needed",
+    checked: boolean
+  ) {
+    if (!user || user.role !== "master_admin") return;
+    const payload = {
+      unavailable: field === "unavailable" ? checked : Boolean(row.unavailable),
+      requested: field === "requested" ? checked : Boolean(row.requested),
+      replied: field === "replied" ? checked : Boolean(row.replied),
+      received: field === "received" ? checked : Boolean(row.received),
+      no_ip_request_needed: field === "no_ip_request_needed" ? checked : Boolean(row.no_ip_request_needed),
+      letter_number: row.letter_number || "",
+      result: row.result || "",
+    };
+    // Optimistic UI update
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            records: prev.records.map((r) =>
+              r.record_key === row.record_key
+                ? { ...r, [field]: checked ? 1 : 0 }
+                : r
+            ),
+          }
+        : prev
+    );
+    const res = await fetch(`/api/events/${row.record_key}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      fetchEvents(true);
+    }
+  }
+
   async function openUsersModal() {
     setUsersOpen(true);
     setUserMsg("");
@@ -846,6 +921,13 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                 >
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> ปิดงานบัญชี
                 </button>
+                <button
+                  onClick={handleExpire90Days}
+                  className="px-2.5 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-400/50 text-rose-200 flex items-center gap-1"
+                  title="ตรวจสอบและอัปเดตรายการ IP ที่เกิน 90 วันและยังไม่ได้ขอข้อมูลจาก ISP เป็น ขอข้อมูลไม่ได้ (ข้อมูลเกิน 90 วัน)"
+                >
+                  <Clock className="w-3.5 h-3.5 text-[#ffd000]" /> อัปเดต IP เกิน 90 วัน
+                </button>
               </>
             )}
             <button
@@ -882,7 +964,7 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
               {user.role === "master_admin" && (
                 <>
                   <button
-                    onClick={() => { setMobileMenuOpen(false); setUploadMsg(""); setUploadResults([]); setUploadOpen(true); }}
+                    onClick={() => { setMobileMenuOpen(false); setUploadOpen(true); }}
                     className="px-3 py-2 rounded-lg bg-[#ffd000] text-[#05112b] font-bold flex items-center justify-center gap-1.5"
                   >
                     <Upload className="w-4 h-4" /> อัปโหลด ZIP
@@ -904,6 +986,12 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                     className="px-3 py-2 rounded-lg bg-[#0f2454] border border-[#244894] text-blue-100 flex items-center justify-center gap-1.5"
                   >
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" /> ปิดงานบัญชี
+                  </button>
+                  <button
+                    onClick={() => { setMobileMenuOpen(false); handleExpire90Days(); }}
+                    className="px-3 py-2 rounded-lg bg-rose-950/60 border border-rose-400/50 text-rose-200 flex items-center justify-center gap-1.5"
+                  >
+                    <Clock className="w-4 h-4 text-[#ffd000]" /> IP เกิน 90 วัน
                   </button>
                   <button
                     onClick={() => { setMobileMenuOpen(false); handleRequestSync(); }}
@@ -1553,13 +1641,20 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                         <ColumnFilterPopover title="ประเทศ" options={tableOpts.country} selected={colFilters.country} onApply={(v) => handleColFilterChange("country", v)} />
                       </div>
                     </th>
-                    <th className="px-3 py-3">สถานะหนังสือ</th>
+                    <th className="px-2 py-3 text-center text-slate-300">ไม่มีข้อมูล IP</th>
+                    <th className="px-2 py-3 text-center text-rose-300">ขอข้อมูลไม่ได้</th>
+                    <th className="px-2 py-3 text-center text-[#ffd000]">ขอข้อมูลแล้ว</th>
+                    <th className="px-2 py-3 text-center text-sky-300">ตอบกลับแล้ว</th>
+                    <th className="px-2 py-3 text-center text-emerald-300">ได้รับข้อมูลแล้ว</th>
+                    <th className="px-2 py-3 text-center text-teal-300">ไม่ต้องขอข้อมูล IP</th>
+                    <th className="px-3 py-3">สถานะ</th>
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span>เลขหนังสือ</span>
                         <ColumnFilterPopover title="เลขหนังสือ" options={tableOpts.letter} selected={colFilters.letter} onApply={(v) => handleColFilterChange("letter", v)} />
                       </div>
                     </th>
+                    <th className="px-3 py-3">ผลลัพธ์</th>
                     {user.role === "master_admin" && <th className="px-3 py-3">จัดการ</th>}
                   </tr>
                 </thead>
@@ -1606,10 +1701,32 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                           <div className="text-slate-100 truncate">{row.network || "—"}</div>
                           <div className="text-[11px] text-blue-300">{row.country || "—"}</div>
                         </td>
+                        <td className="px-2 py-2.5 text-center">
+                          <input
+                            type="checkbox"
+                            disabled
+                            checked={Boolean(row.no_ip_data)}
+                            className="accent-slate-400 w-3.5 h-3.5"
+                          />
+                        </td>
+                        {(["unavailable", "requested", "replied", "received", "no_ip_request_needed"] as const).map((field) => (
+                          <td key={field} className="px-2 py-2.5 text-center">
+                            <input
+                              type="checkbox"
+                              disabled={user.role !== "master_admin"}
+                              checked={Boolean(row[field])}
+                              onChange={(e) => handleQuickToggleCheckbox(row, field, e.target.checked)}
+                              className="accent-[#ffd000] w-3.5 h-3.5 cursor-pointer disabled:cursor-not-allowed"
+                            />
+                          </td>
+                        ))}
                         <td className="px-3 py-2.5">
                           <span className={`px-2 py-0.5 rounded-full text-[11px] ${st.cls}`}>{st.label}</span>
                         </td>
                         <td className="px-3 py-2.5 font-mono text-blue-100">{row.letter_number || "—"}</td>
+                        <td className="px-3 py-2.5 max-w-[200px] truncate text-blue-100" title={row.result || ""}>
+                          {row.result || "—"}
+                        </td>
                         {user.role === "master_admin" && (
                           <td className="px-3 py-2.5">
                             <button

@@ -499,11 +499,12 @@ export default function ExcelManagerView({
                 </th>
                 <th className="px-2.5 py-2.5 border-r border-[#1a346e]">From – To IP</th>
                 <th className="px-2.5 py-2.5 border-r border-[#1a346e]">Source ZIP / PDF</th>
-                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-rose-300">ขอไม่ได้</th>
-                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-[#ffd000]">ขอแล้ว</th>
-                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-sky-300">ตอบกลับ</th>
-                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-emerald-300">ได้รับ</th>
-                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-teal-300">ไม่ต้องขอ</th>
+                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-slate-300">ไม่มีข้อมูล IP</th>
+                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-rose-300">ขอข้อมูลไม่ได้</th>
+                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-[#ffd000]">ขอข้อมูลแล้ว</th>
+                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-sky-300">ตอบกลับแล้ว</th>
+                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-emerald-300">ได้รับข้อมูลแล้ว</th>
+                <th className="px-2 py-2.5 border-r border-[#1a346e] text-center text-teal-300">ไม่ต้องขอข้อมูล IP</th>
                 <th className="px-2.5 py-2.5 border-r border-[#1a346e] min-w-[140px]">
                   <div className="inline-flex items-center gap-1">
                     <span>เลขหนังสือ</span>
@@ -573,6 +574,14 @@ export default function ExcelManagerView({
                       {row.source_zip || "—"}
                     </td>
 
+                    <td className="px-2 py-1.5 border-r border-[#163066] text-center">
+                      <input
+                        type="checkbox"
+                        disabled
+                        checked={Boolean(row.no_ip_data)}
+                        className="accent-slate-400 w-3.5 h-3.5"
+                      />
+                    </td>
                     {(["unavailable", "requested", "replied", "received", "no_ip_request_needed"] as const).map((field) => (
                       <td key={field} className="px-2 py-1.5 border-r border-[#163066] text-center">
                         <input

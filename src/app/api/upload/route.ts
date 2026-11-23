@@ -166,6 +166,7 @@ export async function POST(req: NextRequest) {
   }> = [];
 
   for (const file of files) {
+    let batchId: number | null = null;
     try {
       const buf = Buffer.from(await file.arrayBuffer());
       const shaHex = crypto.createHash("sha256").update(buf).digest("hex");
@@ -207,7 +208,7 @@ export async function POST(req: NextRequest) {
       await pool.execute(
         `INSERT INTO upload_batches (sha256, platform, filename, file_size, import_status, uploaded_by)
          VALUES (?, ?, ?, ?, 'processing', ?)
-         ON DUPLICATE KEY UPDATE import_status = 'processing', platform = VALUES(platform)`,
+         ON DUPLICATE KEY UPDATE import_status = 'processing', error_message = NULL, platform = VALUES(platform)`,
         [shaBuf, platform, file.name.slice(0, 255), buf.length, user.id]
       );
 
@@ -215,7 +216,7 @@ export async function POST(req: NextRequest) {
         `SELECT id FROM upload_batches WHERE sha256 = ? LIMIT 1`,
         [shaBuf]
       );
-      const batchId = Number(batchRows[0].id);
+      batchId = Number(batchRows[0].id);
 
       const parsed = isMeta ? await parseMetaZip(buf, file.name) : await parseTikTokZip(buf, file.name);
       if (!parsed.length) {
@@ -236,40 +237,72 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Ensure social account exists
+      // Ensure social account exists — also check existing accounts by account_name (e.g. Excel-imported TikTok URLs)
       const first = parsed[0];
       const accIdentifier = (first.account_identifier || first.account || first.target_id || file.name).slice(0, 255);
-      await pool.execute(
-        `INSERT INTO social_accounts (platform, account_identifier, account_name, target_id, it_no, meta_account_type)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           target_id = IF(VALUES(target_id) <> '', VALUES(target_id), target_id),
-           it_no = IF(VALUES(it_no) <> '', VALUES(it_no), it_no),
-           meta_account_type = IF(VALUES(meta_account_type) <> '', VALUES(meta_account_type), meta_account_type)`,
-        [
-          first.platform,
-          accIdentifier,
-          first.account.slice(0, 255),
-          first.target_id.slice(0, 100),
-          first.it_no.slice(0, 100),
-          first.meta_account_type,
-        ]
-      );
-      const [accRows] = await pool.execute<mysql.RowDataPacket[]>(
-        `SELECT id FROM social_accounts WHERE platform = ? AND account_identifier = ? LIMIT 1`,
-        [first.platform, accIdentifier]
-      );
-      const accountId = Number(accRows[0].id);
+      const accNameClean = first.account.slice(0, 255);
 
-      // Layer 2 Semantic Deduplication: Load existing (event_local, ip, port) for this account
+      const [matchedAccRows] = await pool.execute<mysql.RowDataPacket[]>(
+        `SELECT id, account_identifier FROM social_accounts
+         WHERE platform = ? AND (account_identifier = ? OR (account_name <> '' AND account_name = ?))
+         ORDER BY (account_identifier = ?) DESC, id ASC`,
+        [first.platform, accIdentifier, accNameClean, accIdentifier]
+      );
+
+      let accountId: number;
+      const relatedAccountIds: number[] = matchedAccRows.map((r) => Number(r.id));
+      if (matchedAccRows.length > 0) {
+        accountId = Number(matchedAccRows[0].id);
+        await pool.execute(
+          `UPDATE social_accounts
+           SET target_id = IF(? <> '' AND target_id = '', ?, target_id),
+               it_no = IF(? <> '' AND it_no = '', ?, it_no),
+               meta_account_type = IF(? <> '' AND meta_account_type = '', ?, meta_account_type)
+           WHERE id = ?`,
+          [
+            first.target_id.slice(0, 100),
+            first.target_id.slice(0, 100),
+            first.it_no.slice(0, 100),
+            first.it_no.slice(0, 100),
+            first.meta_account_type,
+            first.meta_account_type,
+            accountId,
+          ]
+        );
+      } else {
+        await pool.execute(
+          `INSERT INTO social_accounts (platform, account_identifier, account_name, target_id, it_no, meta_account_type)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             target_id = IF(VALUES(target_id) <> '', VALUES(target_id), target_id),
+             it_no = IF(VALUES(it_no) <> '', VALUES(it_no), it_no),
+             meta_account_type = IF(VALUES(meta_account_type) <> '', VALUES(meta_account_type), meta_account_type)`,
+          [
+            first.platform,
+            accIdentifier,
+            accNameClean,
+            first.target_id.slice(0, 100),
+            first.it_no.slice(0, 100),
+            first.meta_account_type,
+          ]
+        );
+        const [accRows] = await pool.execute<mysql.RowDataPacket[]>(
+          `SELECT id FROM social_accounts WHERE platform = ? AND account_identifier = ? LIMIT 1`,
+          [first.platform, accIdentifier]
+        );
+        accountId = Number(accRows[0].id);
+        relatedAccountIds.push(accountId);
+      }
+
+      // Layer 2 Semantic Deduplication: Load existing (event_local, ip, port) across all matching account_ids
       // so the exact same event (Account + Time + IP + Port) is NEVER duplicated even from a different ZIP!
       const [existingEvRows] = await pool.query<mysql.RowDataPacket[]>(
         `SELECT DATE_FORMAT(event_local, '%Y-%m-%d %H:%i:%s') AS lt,
                 INET6_NTOA(ip_bin) AS ip,
                 port
          FROM ip_events
-         WHERE account_id = ?`,
-        [accountId]
+         WHERE account_id IN (?)`,
+        [relatedAccountIds]
       );
       const seenFingerprints = new Set<string>();
       for (const er of existingEvRows) {
@@ -394,6 +427,17 @@ export async function POST(req: NextRequest) {
         scammer_matched: matchedCases.length,
       });
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (batchId !== null) {
+        try {
+          await pool.execute(
+            `UPDATE upload_batches SET import_status = 'failed', error_message = ? WHERE id = ?`,
+            [errMsg.slice(0, 500), batchId]
+          );
+        } catch {
+          // ignore secondary DB logging failure
+        }
+      }
       summary.push({
         filename: file.name,
         platform: platformHint === "auto" ? "Unknown" : platformHint,
@@ -402,7 +446,7 @@ export async function POST(req: NextRequest) {
         records: 0,
         unique_ips: 0,
         scammer_matched: 0,
-        error: err instanceof Error ? err.message : String(err),
+        error: errMsg,
       });
     }
   }

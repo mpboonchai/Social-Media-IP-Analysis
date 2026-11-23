@@ -1,7 +1,16 @@
 import JSZip from "jszip";
-import pdfParse from "pdf-parse";
+import { extractText } from "unpdf";
 import { sha256Hex } from "../ip-utils";
 import type { ParsedIpEvent } from "./meta";
+
+async function extractPdfText(entry: JSZip.JSZipObject): Promise<string> {
+  const raw = await entry.async("uint8array");
+  // Copy into a standalone Uint8Array so pdf.js never reads outside bounds of a shared ArrayBuffer slab
+  const clean = new Uint8Array(raw.byteLength);
+  clean.set(raw);
+  const { text } = await extractText(clean, { mergePages: true });
+  return Array.isArray(text) ? text.join("\n") : String(text || "");
+}
 
 function toLocalIsoPlus7(utcIso: string): string {
   return new Date(new Date(utcIso).getTime() + 7 * 3600_000).toISOString().slice(0, -1) + "+07:00";
@@ -20,6 +29,7 @@ function parseTikTokDate(value: string): string | null {
 function normalizeTikTokPdfText(value: string): string {
   return String(value || "")
     .replace(/\u00a0/g, " ")
+    .replace(/U\s*s\s*e\s*r\s*n\s*a\s*m\s*e/gi, "Username")
     .replace(/U\s*s\s*e\s*r(?=\s+(?:login|logout)\s+(?:time|IP|country):)/gi, "User");
 }
 
@@ -63,19 +73,17 @@ export async function parseTikTokZip(buffer: Buffer | Uint8Array, filename: stri
   let account = filename.replace(/\.zip$/i, "").replace(/_part_.*$/i, "").replace(/-\(\d+\)$/i, "");
   const bsiEntry = allPdfs.find((item) => /(^|\/)Profile\/BSI\.pdf$/i.test(item.name));
   if (bsiEntry) {
-    const bsiBuf = await bsiEntry.async("nodebuffer");
-    const parsedBsi = await pdfParse(bsiBuf);
-    const bsiText = normalizeTikTokPdfText(parsedBsi.text);
-    const matchUser = bsiText.match(/Username\s*[:\n\r ]+([^\r\n]+)/i)?.[1]?.trim();
+    const rawBsi = await extractPdfText(bsiEntry);
+    const bsiText = normalizeTikTokPdfText(rawBsi);
+    const matchUser = bsiText.match(/Username\s*[:\n\r ]+([^\r\n]+)/i)?.[1]?.replace(/\s+/g, "").trim();
     if (matchUser) account = matchUser;
   }
 
   const rows: ParsedIpEvent[] = [];
 
   for (const entry of entries) {
-    const pdfBuf = await entry.async("nodebuffer");
-    const parsed = await pdfParse(pdfBuf);
-    const text = normalizeTikTokPdfText(parsed.text);
+    const rawText = await extractPdfText(entry);
+    const text = normalizeTikTokPdfText(rawText);
     const sourcePdf = entry.name.split("/").pop() || entry.name;
     let sourceNo = 0;
 

@@ -407,6 +407,22 @@ export async function POST(req: NextRequest) {
         );
         insertedNew += Number(insRes.affectedRows || 0);
       }
+
+      // For files with no IP data (1 placeholder row with no_ip_data = 1), automatically record result = 'ไม่มีข้อมูล'
+      const noIpKeys = dedupedParsed.filter((r) => r.no_ip_data).map((r) => hexToBuffer32(r.record_key));
+      if (noIpKeys.length > 0) {
+        await pool.query(
+          `INSERT INTO ip_request_tracking (ip_event_id, result, updated_by)
+           SELECT e.id, 'ไม่มีข้อมูล', ?
+           FROM ip_events e
+           WHERE e.record_key IN (?) AND e.no_ip_data = 1
+           ON DUPLICATE KEY UPDATE
+             result = IF(COALESCE(result, '') = '', 'ไม่มีข้อมูล', result),
+             updated_by = IF(COALESCE(result, '') = '', VALUES(updated_by), updated_by)`,
+          [user.username, noIpKeys]
+        );
+      }
+
       const skippedDuplicates = semanticSkipped + Math.max(0, dedupedParsed.length - insertedNew);
 
       await pool.execute(

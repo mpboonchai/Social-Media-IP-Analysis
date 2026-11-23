@@ -12,6 +12,8 @@ interface FileResultItem {
   inserted_new?: number;
   skipped_duplicates?: number;
   unique_ips: number;
+  rdap_cache_hits?: number;
+  rdap_external_fetched?: number;
   scammer_matched: number;
   error?: string;
 }
@@ -52,6 +54,8 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
     totalParsed: number;
     totalInsertedNew: number;
     totalSkippedDup: number;
+    totalRdapCacheHits: number;
+    totalRdapExternal: number;
     totalScammerMatched: number;
   } | null>(null);
 
@@ -89,42 +93,65 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
     }
   }
 
+  async function uploadSingleWithRetry(file: File): Promise<{ ok: boolean; status: number; body: { results?: FileResultItem[]; error?: string } }> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const fd = new FormData();
+        fd.append("platform_hint", platformHint);
+        fd.append("files", file);
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        const body = await res.json();
+        if (res.ok || attempt === 1) return { ok: res.ok, status: res.status, body };
+      } catch (err) {
+        if (attempt === 1) {
+          return {
+            ok: false,
+            status: 0,
+            body: { error: err instanceof Error ? err.message : "Network error" },
+          };
+        }
+      }
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    return { ok: false, status: 0, body: { error: "Upload failed" } };
+  }
+
   async function startUpload() {
     if (!queue.length || busy) return;
     setBusy(true);
     setDoneSummary(null);
 
+    const snapshot = [...queue];
+    const total = snapshot.length;
+    const concurrency = Math.min(3, total);
+
+    let cursor = 0;
+    let finished = 0;
     let processedFiles = 0;
     let duplicateFiles = 0;
     let failedFiles = 0;
     let totalParsed = 0;
     let totalInsertedNew = 0;
     let totalSkippedDup = 0;
+    let totalRdapCacheHits = 0;
+    let totalRdapExternal = 0;
     let totalScammerMatched = 0;
 
-    for (let i = 0; i < queue.length; i++) {
-      const item = queue[i];
-      setCurrentIdx(i + 1);
-      setLiveStatus(
-        `กำลังประมวลผลไฟล์ที่ ${i + 1}/${queue.length}: ${item.file.name} — แตกไฟล์ ZIP ➔ แยกโครงสร้าง META/TikTok ➔ ตรวจซ้ำ SHA-256 ➔ จับคู่เคส Scammer ➔ ดึง RDAP ➔ บันทึก TiDB Cloud`
-      );
+    const runWorker = async () => {
+      while (cursor < total) {
+        const i = cursor++;
+        const item = snapshot[i];
+        setLiveStatus(
+          `กำลังอัปโหลดพร้อมกัน ${concurrency} คิว · ไฟล์ที่ ${i + 1}/${total}: ${item.file.name} (ตรวจซ้ำ Account+เวลา+IP+Port ➔ แคช RDAP ➔ จับคู่ Scammer ➔ บันทึก TiDB Cloud)`
+        );
+        setQueue((prev) => prev.map((q, idx) => (idx === i ? { ...q, state: "uploading" } : q)));
 
-      setQueue((prev) =>
-        prev.map((q, idx) => (idx === i ? { ...q, state: "uploading" } : q))
-      );
-
-      try {
-        const fd = new FormData();
-        fd.append("platform_hint", platformHint);
-        fd.append("files", item.file);
-
-        const res = await fetch("/api/upload", { method: "POST", body: fd });
-        const body = await res.json();
+        const { ok, status, body } = await uploadSingleWithRetry(item.file);
         const r: FileResultItem | undefined = body.results?.[0];
 
-        if (!res.ok || !r || r.status === "failed") {
+        if (!ok || !r || r.status === "failed") {
           failedFiles++;
-          const errMsg = r?.error || body.error || `HTTP ${res.status}`;
+          const errMsg = r?.error || body.error || `HTTP ${status}`;
           setQueue((prev) =>
             prev.map((q, idx) =>
               idx === i
@@ -156,46 +183,33 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
           totalParsed += Number(r.records || 0);
           totalInsertedNew += Number(r.inserted_new ?? r.records ?? 0);
           totalSkippedDup += Number(r.skipped_duplicates || 0);
+          totalRdapCacheHits += Number(r.rdap_cache_hits || 0);
+          totalRdapExternal += Number(r.rdap_external_fetched || 0);
           totalScammerMatched += Number(r.scammer_matched || 0);
           setQueue((prev) =>
             prev.map((q, idx) => (idx === i ? { ...q, state: "done", result: r } : q))
           );
         }
-      } catch (err) {
-        failedFiles++;
-        setQueue((prev) =>
-          prev.map((q, idx) =>
-            idx === i
-              ? {
-                  ...q,
-                  state: "error",
-                  result: {
-                    filename: item.file.name,
-                    platform: platformHint,
-                    parser_used: platformHint,
-                    status: "failed",
-                    records: 0,
-                    unique_ips: 0,
-                    scammer_matched: 0,
-                    error: err instanceof Error ? err.message : "Network error",
-                  },
-                }
-              : q
-          )
-        );
+
+        finished++;
+        setCurrentIdx(finished);
       }
-    }
+    };
+
+    await Promise.all(Array.from({ length: concurrency }, runWorker));
 
     setBusy(false);
     setLiveStatus("อัปโหลดและประมวลผลครบทุกไฟล์เรียบร้อยแล้ว!");
     setDoneSummary({
-      totalFiles: queue.length,
+      totalFiles: total,
       processedFiles,
       duplicateFiles,
       failedFiles,
       totalParsed,
       totalInsertedNew,
       totalSkippedDup,
+      totalRdapCacheHits,
+      totalRdapExternal,
       totalScammerMatched,
     });
     onComplete();
@@ -458,6 +472,13 @@ export default function ZipUploadModal({ open, onClose, onComplete }: ZipUploadM
                 <div className="text-[10px] text-blue-300">รายการซ้ำที่ถูกข้าม</div>
                 <div className="text-base font-bold text-blue-200">{fmt(doneSummary.totalSkippedDup)} รายการ</div>
               </div>
+            </div>
+            <div className="text-[11px] text-blue-200 pt-1">
+              RDAP ใช้แคชเดิม (ไม่ต้องโหลดใหม่): <strong className="text-sky-300">{fmt(doneSummary.totalRdapCacheHits)} IP</strong>
+              {" · "}
+              ดึง RDAP ใหม่จากภายนอก: <strong className="text-[#ffd000]">{fmt(doneSummary.totalRdapExternal)} IP</strong>
+              {" · "}
+              จับคู่เคส Scammer: <strong className="text-rose-300">{fmt(doneSummary.totalScammerMatched)}</strong>
             </div>
             {doneSummary.failedFiles > 0 && (
               <p className="text-rose-300 font-medium">

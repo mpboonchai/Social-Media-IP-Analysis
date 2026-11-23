@@ -7,7 +7,7 @@ import { getSessionUser } from "@/lib/auth";
 import { hexToBuffer32, ipToBuffer } from "@/lib/ip-utils";
 import { parseMetaZip } from "@/lib/parsers/meta";
 import { parseTikTokZip } from "@/lib/parsers/tiktok";
-import { lookupOrFetchRdap } from "@/lib/rdap/lookup";
+import { batchResolveRdap } from "@/lib/rdap/lookup";
 import { invalidateEventsStatsCache } from "@/lib/events-cache";
 import {
   extractTargetFromUrl,
@@ -28,42 +28,95 @@ interface DbCaseLite {
   response_account: string;
 }
 
-function matchDbCasesForAccount(
-  cases: DbCaseLite[],
+const CASES_CACHE_TTL_MS = 2 * 60_000;
+const globalCasesCache = globalThis as unknown as {
+  uploadCasesIndex?: Map<string, DbCaseLite[]>;
+  uploadCasesLoadedAt?: number;
+};
+
+async function getCasesTokenIndex(pool: mysql.Pool): Promise<Map<string, DbCaseLite[]>> {
+  const now = Date.now();
+  if (
+    globalCasesCache.uploadCasesIndex &&
+    globalCasesCache.uploadCasesLoadedAt &&
+    now - globalCasesCache.uploadCasesLoadedAt < CASES_CACHE_TTL_MS
+  ) {
+    return globalCasesCache.uploadCasesIndex;
+  }
+
+  const [caseRows] = await pool.query<mysql.RowDataPacket[]>(
+    `SELECT inst_id, DATE_FORMAT(reported_date, '%Y-%m-%d') AS reported_date,
+            team, platform, platform_url, normalized_url, resolved_url, account_name, tpo_code, response_account
+     FROM cases`
+  );
+
+  const tokenIndex = new Map<string, DbCaseLite[]>();
+  const addToken = (raw: string, c: DbCaseLite) => {
+    const t = String(raw || "").trim().toLowerCase().replace(/^@/, "");
+    if (t.length < 2) return;
+    let arr = tokenIndex.get(t);
+    if (!arr) {
+      arr = [];
+      tokenIndex.set(t, arr);
+    }
+    arr.push(c);
+  };
+
+  for (const r of caseRows) {
+    const c: DbCaseLite = {
+      inst_id: String(r.inst_id || ""),
+      reported_date: String(r.reported_date || ""),
+      team: String(r.team || ""),
+      platform: String(r.platform || ""),
+      platform_url: String(r.platform_url || ""),
+      normalized_url: String(r.normalized_url || ""),
+      resolved_url: String(r.resolved_url || ""),
+      account_name: String(r.account_name || ""),
+      tpo_code: String(r.tpo_code || ""),
+      response_account: String(r.response_account || ""),
+    };
+    addToken(c.account_name, c);
+    addToken(c.response_account, c);
+    addToken(c.normalized_url, c);
+    addToken(extractTargetFromUrl(c.platform_url), c);
+    addToken(extractTargetFromUrl(c.resolved_url), c);
+  }
+
+  globalCasesCache.uploadCasesIndex = tokenIndex;
+  globalCasesCache.uploadCasesLoadedAt = now;
+  return tokenIndex;
+}
+
+function matchFromTokenIndex(
+  tokenIndex: Map<string, DbCaseLite[]>,
   platform: string,
   account: string,
   targetId: string,
   accountIdentifier: string
 ): DbCaseLite[] {
-  const tokens = new Set(
-    [
-      account,
-      targetId,
-      accountIdentifier,
-      normalizeSocialUrl(account),
-      extractTargetFromUrl(account),
-    ]
-      .map((s) => String(s || "").trim().toLowerCase().replace(/^@/, ""))
-      .filter((s) => s.length >= 2)
-  );
-  if (!tokens.size) return [];
+  const tokens = [
+    account,
+    targetId,
+    accountIdentifier,
+    normalizeSocialUrl(account),
+    extractTargetFromUrl(account),
+  ]
+    .map((s) => String(s || "").trim().toLowerCase().replace(/^@/, ""))
+    .filter((s) => s.length >= 2);
 
   const platNorm = platform.toLowerCase();
-  return cases.filter((c) => {
-    const cp = c.platform.toLowerCase();
-    if (platNorm === "tiktok" && cp && !cp.includes("tiktok")) return false;
-    if ((platNorm === "facebook" || platNorm === "instagram") && cp.includes("tiktok")) return false;
-    const cTokens = [
-      c.account_name,
-      c.response_account,
-      c.normalized_url,
-      extractTargetFromUrl(c.platform_url),
-      extractTargetFromUrl(c.resolved_url),
-    ]
-      .map((s) => String(s || "").trim().toLowerCase().replace(/^@/, ""))
-      .filter(Boolean);
-    return cTokens.some((ct) => tokens.has(ct));
-  });
+  const matched = new Set<DbCaseLite>();
+  for (const t of tokens) {
+    const hits = tokenIndex.get(t);
+    if (!hits) continue;
+    for (const c of hits) {
+      const cp = c.platform.toLowerCase();
+      if (platNorm === "tiktok" && cp && !cp.includes("tiktok")) continue;
+      if ((platNorm === "facebook" || platNorm === "instagram") && cp.includes("tiktok")) continue;
+      matched.add(c);
+    }
+  }
+  return Array.from(matched);
 }
 
 function toMysqlDt(iso: string): string | null {
@@ -71,6 +124,17 @@ function toMysqlDt(iso: string): string | null {
   const m = iso.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?/);
   if (!m) return null;
   return `${m[1]} ${m[2]}.${(m[3] || "000").padEnd(3, "0")}`;
+}
+
+/**
+ * Canonical semantic event fingerprint for exact deduplication across ANY ZIP file:
+ * (platform + account_id + event_local(second) + ip + port)
+ */
+function semanticFingerprint(localMysqlDt: string | null, ip: string, port: number | null): string {
+  const sec = localMysqlDt ? localMysqlDt.slice(0, 19) : "";
+  const normIp = String(ip || "").trim().toLowerCase();
+  const normPort = port !== null && port !== undefined ? String(port) : "";
+  return `${sec}|${normIp}|${normPort}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -84,25 +148,7 @@ export async function POST(req: NextRequest) {
   if (!files.length) return NextResponse.json({ error: "no_files" }, { status: 400 });
 
   const pool = getPool();
-
-  // Load existing Scammer cases once for auto-correlation
-  const [caseRows] = await pool.query<mysql.RowDataPacket[]>(
-    `SELECT inst_id, DATE_FORMAT(reported_date, '%Y-%m-%d') AS reported_date,
-            team, platform, platform_url, normalized_url, resolved_url, account_name, tpo_code, response_account
-     FROM cases`
-  );
-  const allCases: DbCaseLite[] = caseRows.map((c) => ({
-    inst_id: String(c.inst_id || ""),
-    reported_date: String(c.reported_date || ""),
-    team: String(c.team || ""),
-    platform: String(c.platform || ""),
-    platform_url: String(c.platform_url || ""),
-    normalized_url: String(c.normalized_url || ""),
-    resolved_url: String(c.resolved_url || ""),
-    account_name: String(c.account_name || ""),
-    tpo_code: String(c.tpo_code || ""),
-    response_account: String(c.response_account || ""),
-  }));
+  const casesTokenIndex = await getCasesTokenIndex(pool);
 
   const summary: Array<{
     filename: string;
@@ -113,6 +159,8 @@ export async function POST(req: NextRequest) {
     inserted_new?: number;
     skipped_duplicates?: number;
     unique_ips: number;
+    rdap_cache_hits?: number;
+    rdap_external_fetched?: number;
     scammer_matched: number;
     error?: string;
   }> = [];
@@ -123,6 +171,7 @@ export async function POST(req: NextRequest) {
       const shaHex = crypto.createHash("sha256").update(buf).digest("hex");
       const shaBuf = Buffer.from(shaHex, "hex");
 
+      // Layer 1 Deduplication: Exact file SHA-256 check
       const [existing] = await pool.execute<mysql.RowDataPacket[]>(
         `SELECT id, import_status, platform, record_count FROM upload_batches WHERE sha256 = ? LIMIT 1`,
         [shaBuf]
@@ -134,6 +183,8 @@ export async function POST(req: NextRequest) {
           parser_used: "cached",
           status: "skipped_duplicate",
           records: Number(existing[0].record_count || 0),
+          inserted_new: 0,
+          skipped_duplicates: Number(existing[0].record_count || 0),
           unique_ips: 0,
           scammer_matched: 0,
         });
@@ -210,9 +261,45 @@ export async function POST(req: NextRequest) {
       );
       const accountId = Number(accRows[0].id);
 
-      // Match against Scammer cases
-      const matchedCases = matchDbCasesForAccount(
-        allCases,
+      // Layer 2 Semantic Deduplication: Load existing (event_local, ip, port) for this account
+      // so the exact same event (Account + Time + IP + Port) is NEVER duplicated even from a different ZIP!
+      const [existingEvRows] = await pool.query<mysql.RowDataPacket[]>(
+        `SELECT DATE_FORMAT(event_local, '%Y-%m-%d %H:%i:%s') AS lt,
+                INET6_NTOA(ip_bin) AS ip,
+                port
+         FROM ip_events
+         WHERE account_id = ?`,
+        [accountId]
+      );
+      const seenFingerprints = new Set<string>();
+      for (const er of existingEvRows) {
+        const fp = semanticFingerprint(
+          er.lt ? String(er.lt) : null,
+          er.ip ? String(er.ip) : "",
+          er.port !== null && er.port !== undefined ? Number(er.port) : null
+        );
+        seenFingerprints.add(fp);
+      }
+
+      // Filter out semantic duplicates BEFORE doing RDAP lookup (saves time & external API calls!)
+      const dedupedParsed: typeof parsed = [];
+      let semanticSkipped = 0;
+      for (const r of parsed) {
+        const localDt = toMysqlDt(r.local);
+        if (!r.no_ip_data && r.ip && localDt) {
+          const fp = semanticFingerprint(localDt, r.ip, r.port);
+          if (seenFingerprints.has(fp)) {
+            semanticSkipped++;
+            continue;
+          }
+          seenFingerprints.add(fp);
+        }
+        dedupedParsed.push(r);
+      }
+
+      // Match against cached Scammer cases index (O(1))
+      const matchedCases = matchFromTokenIndex(
+        casesTokenIndex,
         first.platform,
         first.account,
         first.target_id,
@@ -225,21 +312,12 @@ export async function POST(req: NextRequest) {
       const teams = [...new Set(matchedCases.map((c) => c.team).filter(Boolean))].join(" / ").slice(0, 100);
       const scammerCaseLabel = matchedCases.length > 0 ? "Scammer" : "";
 
-      // Match RDAP from cache or auto-fetch external RDAP for unique IPs
-      const uniqueIps = [...new Set(parsed.map((r) => r.ip).filter(Boolean))];
-      const ipRdapMap = new Map<string, number | null>();
-      let ipCursor = 0;
-      const runRdapWorker = async () => {
-        while (ipCursor < uniqueIps.length) {
-          const ip = uniqueIps[ipCursor++];
-          const id = await lookupOrFetchRdap(pool, ip);
-          ipRdapMap.set(ip, id);
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(4, uniqueIps.length) }, runRdapWorker));
+      // Ultra-fast RDAP resolution (in-memory CIDR cache -> external fetch only for genuinely new ranges)
+      const uniqueIps = [...new Set(dedupedParsed.map((r) => r.ip).filter(Boolean))];
+      const { map: ipRdapMap, cacheHits, externalFetched } = await batchResolveRdap(pool, uniqueIps);
 
       const values: unknown[][] = [];
-      for (const r of parsed) {
+      for (const r of dedupedParsed) {
         const ipParsed = ipToBuffer(r.ip);
         const rdapId = r.ip ? (ipRdapMap.get(r.ip) ?? null) : null;
         const localDt = toMysqlDt(r.local);
@@ -281,8 +359,7 @@ export async function POST(req: NextRequest) {
         ]);
       }
 
-      // Chunked insert (1,000 rows per batch) for TiDB Serverless reliability
-      // INSERT IGNORE skips duplicate record_key rows and only inserts new unique events
+      // Layer 3 Deduplication: record_key UNIQUE constraint via INSERT IGNORE (chunked 1,000 rows)
       let insertedNew = 0;
       for (let i = 0; i < values.length; i += 1000) {
         const chunk = values.slice(i, i + 1000);
@@ -297,7 +374,7 @@ export async function POST(req: NextRequest) {
         );
         insertedNew += Number(insRes.affectedRows || 0);
       }
-      const skippedDuplicates = Math.max(0, parsed.length - insertedNew);
+      const skippedDuplicates = semanticSkipped + Math.max(0, dedupedParsed.length - insertedNew);
 
       await pool.execute(
         `UPDATE upload_batches SET import_status = 'processed', record_count = ?, completed_at = NOW() WHERE id = ?`,
@@ -312,6 +389,8 @@ export async function POST(req: NextRequest) {
         inserted_new: insertedNew,
         skipped_duplicates: skippedDuplicates,
         unique_ips: uniqueIps.length,
+        rdap_cache_hits: cacheHits,
+        rdap_external_fetched: externalFetched,
         scammer_matched: matchedCases.length,
       });
     } catch (err) {

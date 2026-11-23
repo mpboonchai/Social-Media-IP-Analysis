@@ -176,6 +176,9 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   const [loading, setLoading] = useState(false);
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState(25);
+  const [showAllMode, setShowAllMode] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<"dashboard" | "analytics" | "excel" | "scammers">("dashboard");
   const [lastRefreshed, setLastRefreshed] = useState("");
@@ -361,6 +364,93 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   useEffect(() => {
     fetchEvents(false);
   }, [fetchEvents]);
+
+  const loadMoreRows = useCallback(async () => {
+    if (!user || !showAllMode || loading || loadingMore || !data) return;
+    const loadedCount = data.records.length;
+    const totalCount = Number(data.pagination.total || 0);
+    if (loadedCount >= totalCount) return;
+
+    setLoadingMore(true);
+    try {
+      const colParams: Record<string, string> = {};
+      (Object.keys(colFilters) as ColFilterKey[]).forEach((k) => {
+        if (colFilters[k].length) colParams[`col_${k}`] = colFilters[k].join("||");
+      });
+      const qs = new URLSearchParams({
+        limit: "200",
+        offset: String(loadedCount),
+        skip_stats: "1",
+        sort_by: sortBy,
+        sort_dir: sortDir,
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+        ...(platform ? { platform } : {}),
+        ...(eventType ? { event_type: eventType } : {}),
+        ...(country ? { country } : {}),
+        ...(network ? { network } : {}),
+        ...(requestStatus ? { request_status: requestStatus } : {}),
+        ...(dateFrom ? { date_from: dateFrom } : {}),
+        ...(dateTo ? { date_to: dateTo } : {}),
+        ...(reportedFrom ? { reported_from: reportedFrom } : {}),
+        ...(reportedTo ? { reported_to: reportedTo } : {}),
+        ...(scammerOnly ? { scammer_only: "true" } : {}),
+        ...(caseWindowOnly ? { case_window_only: "true" } : {}),
+        ...colParams,
+      });
+      const res = await fetch(`/api/events?${qs.toString()}`, { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        const incoming: IpEventRow[] = json.records || [];
+        if (incoming.length) {
+          setData((prev) => {
+            if (!prev) return prev;
+            const seen = new Set(prev.records.map((r) => r.record_key));
+            const uniqueNew = incoming.filter((r) => !seen.has(r.record_key));
+            return { ...prev, records: [...prev.records, ...uniqueNew] };
+          });
+        }
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [
+    user,
+    showAllMode,
+    loading,
+    loadingMore,
+    data,
+    colFilters,
+    sortBy,
+    sortDir,
+    debouncedSearch,
+    platform,
+    eventType,
+    country,
+    network,
+    requestStatus,
+    dateFrom,
+    dateTo,
+    reportedFrom,
+    reportedTo,
+    scammerOnly,
+    caseWindowOnly,
+  ]);
+
+  useEffect(() => {
+    if (!showAllMode) return;
+    const el = loadMoreSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMoreRows();
+        }
+      },
+      { rootMargin: "300px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [showAllMode, loadMoreRows]);
 
   function handleSort(col: string) {
     setOffset(0);
@@ -1250,14 +1340,24 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           <div className="flex items-center gap-2 text-xs">
             <span className="text-blue-200">แสดงต่อหน้า:</span>
             <select
-              value={limit}
-              onChange={(e) => { setOffset(0); setLimit(Number(e.target.value)); }}
-              className="rounded-lg bg-[#0a1d45] border border-[#1d3a78] px-2.5 py-1.5 text-white"
+              value={showAllMode ? "all" : String(limit)}
+              onChange={(e) => {
+                setOffset(0);
+                if (e.target.value === "all") {
+                  setShowAllMode(true);
+                  setLimit(200);
+                } else {
+                  setShowAllMode(false);
+                  setLimit(Number(e.target.value));
+                }
+              }}
+              className="rounded-lg bg-[#0a1d45] border border-[#1d3a78] px-2.5 py-1.5 text-white focus:border-[#ffd000]"
             >
-              <option value={25}>25 แถว</option>
-              <option value={50}>50 แถว</option>
-              <option value={100}>100 แถว</option>
-              <option value={200}>200 แถว</option>
+              <option value="25">25 แถว</option>
+              <option value="50">50 แถว</option>
+              <option value="100">100 แถว</option>
+              <option value="200">200 แถว</option>
+              <option value="all">ทั้งหมด (Scroll ต่อเนื่อง)</option>
             </select>
           </div>
         </section>
@@ -1766,26 +1866,54 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           </section>
         )}
 
-        {/* Shared Pagination Footer */}
-        <div className="rounded-xl bg-[#0a1d45] border border-[#1d3a78] px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-blue-200">
-          <span>หน้า {fmt(currentPage)} / {fmt(totalPages)} (ทั้งหมด {fmt(data?.pagination.total)} รายการ)</span>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <button
-              disabled={offset === 0 || loading}
-              onClick={() => setOffset(Math.max(0, offset - limit))}
-              className="flex-1 sm:flex-none px-4 py-2 sm:py-1.5 rounded-lg bg-[#05112b] border border-[#1d3a78] hover:border-[#ffd000] disabled:opacity-40"
-            >
-              ก่อนหน้า
-            </button>
-            <button
-              disabled={currentPage >= totalPages || loading}
-              onClick={() => setOffset(offset + limit)}
-              className="flex-1 sm:flex-none px-4 py-2 sm:py-1.5 rounded-lg bg-[#05112b] border border-[#1d3a78] hover:border-[#ffd000] disabled:opacity-40"
-            >
-              ถัดไป
-            </button>
+        {/* Shared Pagination / Infinite Scroll Footer */}
+        {(activeView === "dashboard" || activeView === "excel") && (
+          <div
+            ref={loadMoreSentinelRef}
+            className="rounded-xl bg-[#0a1d45] border border-[#1d3a78] px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-blue-200"
+          >
+            {showAllMode ? (
+              <>
+                <span>
+                  แสดงแล้ว <strong className="text-[#ffd000]">{fmt(data?.records.length)}</strong> / {fmt(data?.pagination.total)} รายการ
+                  {(data?.records.length || 0) < Number(data?.pagination.total || 0)
+                    ? " · เลื่อนลงด้านล่างเพื่อโหลดต่ออัตโนมัติ"
+                    : " · แสดงครบทุกรายการแล้ว"}
+                </span>
+                {(data?.records.length || 0) < Number(data?.pagination.total || 0) && (
+                  <button
+                    type="button"
+                    disabled={loadingMore || loading}
+                    onClick={loadMoreRows}
+                    className="w-full sm:w-auto px-4 py-2 sm:py-1.5 rounded-lg bg-[#ffd000] hover:bg-[#eab308] text-[#05112b] font-bold disabled:opacity-50"
+                  >
+                    {loadingMore ? "กำลังโหลดเพิ่มอีก 200 แถว..." : "โหลดเพิ่มอีก 200 แถว"}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <span>หน้า {fmt(currentPage)} / {fmt(totalPages)} (ทั้งหมด {fmt(data?.pagination.total)} รายการ)</span>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button
+                    disabled={offset === 0 || loading}
+                    onClick={() => setOffset(Math.max(0, offset - limit))}
+                    className="flex-1 sm:flex-none px-4 py-2 sm:py-1.5 rounded-lg bg-[#05112b] border border-[#1d3a78] hover:border-[#ffd000] disabled:opacity-40"
+                  >
+                    ก่อนหน้า
+                  </button>
+                  <button
+                    disabled={currentPage >= totalPages || loading}
+                    onClick={() => setOffset(offset + limit)}
+                    className="flex-1 sm:flex-none px-4 py-2 sm:py-1.5 rounded-lg bg-[#05112b] border border-[#1d3a78] hover:border-[#ffd000] disabled:opacity-40"
+                  >
+                    ถัดไป
+                  </button>
+                </div>
+              </>
+            )}
           </div>
-        </div>
+        )}
       </main>
 
       {/* ==================== EDIT MODAL ==================== */}

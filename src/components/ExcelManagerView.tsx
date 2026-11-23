@@ -3,7 +3,7 @@
 import React, { useRef, useState } from "react";
 import { Save, Copy, CheckSquare, ArrowUpDown, RotateCcw, Download, FileSpreadsheet, Upload } from "lucide-react";
 import ColumnFilterPopover from "./ColumnFilterPopover";
-import { formatDateDMY, formatDateTimeDMY } from "@/lib/date-format";
+import { formatDateDMY, formatDateTimeDMY, getCaseWindowHighlight } from "@/lib/date-format";
 
 export interface ExcelEventRow {
   record_key: string;
@@ -392,6 +392,17 @@ export default function ExcelManagerView({
 
       {/* Spreadsheet Grid — ALL Columns + Filter Popover on EVERY Column */}
       <div className="rounded-xl bg-[#0a1d45] border border-[#1d3a78] overflow-hidden">
+        <div className="px-3 py-1.5 border-b border-[#163066] bg-[#061533] flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-blue-200">
+          <span className="text-blue-300/80 font-medium">สีไฮไลท์:</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-sm bg-[#4c1d2a] border border-rose-400 inline-block" />
+            ตรงวันรับแจ้ง (สีแดงอ่อน)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-sm bg-[#3d3312] border border-amber-400 inline-block" />
+            ช่วงวันก่อเหตุ 7 วัน / ±3 วัน (สีเหลือง)
+          </span>
+        </div>
         <div className="overflow-x-auto max-h-[68vh]">
           <table className="w-full text-left text-xs border-collapse whitespace-nowrap">
             <thead className="bg-[#05112b] text-blue-200 sticky top-0 z-20 border-b border-[#ffd000]/40">
@@ -525,27 +536,39 @@ export default function ExcelManagerView({
                 const d = getRowDraft(row);
                 const isDirty = Boolean(drafts[row.record_key]);
                 const isSelected = selectedKeys.includes(row.record_key);
+                const hl = getCaseWindowHighlight(row.local_time, row.reported_date, row.case_window_match);
                 const stickyBg = isDirty
                   ? "bg-[#24210f]"
                   : isSelected
                   ? "bg-[#15316e]"
+                  : hl === "reported_day"
+                  ? "bg-[#4c1d2a]"
+                  : hl === "window_7d"
+                  ? "bg-[#3d3312]"
                   : idx % 2 === 0
                   ? "bg-[#0a1d45]"
                   : "bg-[#081738]";
+                const rowBg = isDirty
+                  ? "bg-[#ffd000]/10 hover:bg-[#122b63]/80"
+                  : isSelected
+                  ? "bg-[#1a3a82]/50 hover:bg-[#122b63]/80"
+                  : hl === "reported_day"
+                  ? "bg-[#4c1d2a] hover:bg-[#5f2434]"
+                  : hl === "window_7d"
+                  ? "bg-[#3d3312] hover:bg-[#4e4117]"
+                  : idx % 2 === 0
+                  ? "bg-[#0a1d45] hover:bg-[#122b63]/80"
+                  : "bg-[#081738] hover:bg-[#122b63]/80";
+                const leftAccent = isDirty
+                  ? "border-l-2 border-l-[#ffd000]"
+                  : hl === "reported_day"
+                  ? "border-l-4 border-l-rose-400"
+                  : hl === "window_7d"
+                  ? "border-l-4 border-l-amber-400"
+                  : "";
                 return (
-                  <tr
-                    key={row.record_key}
-                    className={`${
-                      isDirty
-                        ? "bg-[#ffd000]/10"
-                        : isSelected
-                        ? "bg-[#1a3a82]/50"
-                        : idx % 2 === 0
-                        ? "bg-[#0a1d45]"
-                        : "bg-[#081738]"
-                    } hover:bg-[#122b63]/80 transition-colors`}
-                  >
-                    <td className={`sticky left-0 z-10 ${stickyBg} px-2.5 py-1.5 border-r border-[#163066] font-mono text-blue-100 min-w-[156px] w-[156px] ${isDirty ? "border-l-2 border-l-[#ffd000]" : ""}`}>
+                  <tr key={row.record_key} className={`${rowBg} transition-colors`}>
+                    <td className={`sticky left-0 z-10 ${stickyBg} px-2.5 py-1.5 border-r border-[#163066] font-mono text-blue-100 min-w-[156px] w-[156px] ${leftAccent}`}>
                       {formatDateTimeDMY(row.local_time)}
                     </td>
                     <td className={`sticky left-[156px] z-10 ${stickyBg} px-2.5 py-1.5 border-r border-[#163066] font-mono text-[#ffd000] font-semibold min-w-[148px] w-[148px] max-w-[148px] truncate`} title={row.ip || ""}>

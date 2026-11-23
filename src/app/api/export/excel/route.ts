@@ -4,6 +4,7 @@ import type mysql from "mysql2/promise";
 import { getPool } from "@/db";
 import { getSessionUser } from "@/lib/auth";
 import { buildEventWhereClause } from "@/lib/events-query";
+import { getCaseWindowHighlight } from "@/lib/date-format";
 
 function computeStatusLabel(r: Record<string, unknown>): string {
   if (Number(r.no_ip_data)) return "ไม่มีข้อมูล IP";
@@ -181,11 +182,36 @@ export async function GET(req: NextRequest) {
     ws.autoFilter = { from: "A1", to: "BE1" };
     ws.views = [{ state: "frozen", ySplit: 1 }];
 
+    const fillReportedDay: ExcelJS.Fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFDE2E2" },
+    };
+    const fillWindow7d: ExcelJS.Fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFFF3BF" },
+    };
+
     for (const r of rows) {
-      ws.addRow({
+      const excelRow = ws.addRow({
         ...r,
         status_label: computeStatusLabel(r),
       });
+      const hl = getCaseWindowHighlight(
+        r.local_time ? String(r.local_time) : null,
+        r.reported_date ? String(r.reported_date) : null,
+        r.case_window_match
+      );
+      if (hl === "reported_day") {
+        excelRow.eachCell({ includeEmpty: true }, (cell) => {
+          cell.fill = fillReportedDay;
+        });
+      } else if (hl === "window_7d") {
+        excelRow.eachCell({ includeEmpty: true }, (cell) => {
+          cell.fill = fillWindow7d;
+        });
+      }
     }
   }
 

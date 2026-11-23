@@ -32,7 +32,7 @@ import ExcelManagerView, {
 import CountryIspStatsView from "./CountryIspStatsView";
 import ScammerCasesSheet from "./ScammerCasesSheet";
 import ZipUploadModal from "./ZipUploadModal";
-import { formatDateDMY, formatDateTimeDMY } from "@/lib/date-format";
+import { formatDateDMY, formatDateTimeDMY, getCaseWindowHighlight } from "@/lib/date-format";
 
 type IpEventRow = ExcelEventRow;
 
@@ -1603,12 +1603,32 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
               </div>
             </div>
 
+            {/* Highlight Legend */}
+            <div className="px-4 py-1.5 border-b border-[#163066] bg-[#061533] flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-blue-200">
+              <span className="text-blue-300/80 font-medium">สีไฮไลท์:</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-sm bg-[#4c1d2a] border border-rose-400 inline-block" />
+                ตรงวันรับแจ้ง (สีแดงอ่อน)
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-sm bg-[#3d3312] border border-amber-400 inline-block" />
+                ช่วงวันก่อเหตุ 7 วัน / ±3 วัน (สีเหลือง)
+              </span>
+            </div>
+
             {/* Mobile Card List (< md) */}
             <div className="md:hidden divide-y divide-[#1d3a78]/70">
               {(data?.records || []).map((row) => {
                 const st = statusBadge(row);
+                const hl = getCaseWindowHighlight(row.local_time, row.reported_date, row.case_window_match);
+                const cardCls =
+                  hl === "reported_day"
+                    ? "bg-[#4c1d2a]/90 border-l-4 border-l-rose-400"
+                    : hl === "window_7d"
+                    ? "bg-[#3d3312]/90 border-l-4 border-l-amber-400"
+                    : "";
                 return (
-                  <div key={row.record_key} className="p-3.5 space-y-2 text-xs">
+                  <div key={row.record_key} className={`p-3.5 space-y-2 text-xs ${cardCls}`}>
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="px-2 py-0.5 rounded bg-[#133273] text-[#ffd000] font-semibold shrink-0">
@@ -1779,10 +1799,30 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                 <tbody className="divide-y divide-[#163066]">
                   {(data?.records || []).map((row, idx) => {
                     const st = statusBadge(row);
-                    const stickyBg = idx % 2 === 0 ? "bg-[#0a1d45]" : "bg-[#081738]";
+                    const hl = getCaseWindowHighlight(row.local_time, row.reported_date, row.case_window_match);
+                    const stickyBg =
+                      hl === "reported_day"
+                        ? "bg-[#4c1d2a]"
+                        : hl === "window_7d"
+                        ? "bg-[#3d3312]"
+                        : idx % 2 === 0
+                        ? "bg-[#0a1d45]"
+                        : "bg-[#081738]";
+                    const rowHover =
+                      hl === "reported_day"
+                        ? "hover:bg-[#5f2434]"
+                        : hl === "window_7d"
+                        ? "hover:bg-[#4e4117]"
+                        : "hover:bg-[#10285e]/70";
+                    const leftAccent =
+                      hl === "reported_day"
+                        ? "border-l-4 border-l-rose-400"
+                        : hl === "window_7d"
+                        ? "border-l-4 border-l-amber-400"
+                        : "";
                     return (
-                      <tr key={row.record_key} className={`${stickyBg} hover:bg-[#10285e]/70`}>
-                        <td className={`sticky left-0 z-10 ${stickyBg} px-3 py-2.5 border-r border-[#163066] font-mono text-blue-100 min-w-[156px] w-[156px]`}>
+                      <tr key={row.record_key} className={`${stickyBg} ${rowHover}`}>
+                        <td className={`sticky left-0 z-10 ${stickyBg} ${leftAccent} px-3 py-2.5 border-r border-[#163066] font-mono text-blue-100 min-w-[156px] w-[156px]`}>
                           {formatDateTimeDMY(row.local_time)}
                         </td>
                         <td className={`sticky left-[156px] z-10 ${stickyBg} px-3 py-2.5 border-r border-[#163066] font-mono text-[#ffd000] font-semibold min-w-[148px] w-[148px] max-w-[148px] truncate`} title={row.ip || ""}>

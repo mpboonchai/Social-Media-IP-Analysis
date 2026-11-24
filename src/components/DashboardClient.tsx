@@ -734,6 +734,52 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
     }
   }
 
+  async function handleCompleteCoveredCases() {
+    setSyncMsg("กำลังตรวจสอบบัญชีโซเชียลที่ขอข้อมูล ISP ครบทุกช่วงวันก่อเหตุ 7 วัน (±3 วัน) ของทุก Case ID...");
+    try {
+      const checkRes = await fetch("/api/admin/events/complete-covered-cases", { cache: "no-store" });
+      const checkBody = await checkRes.json();
+      if (!checkRes.ok) {
+        setSyncMsg(`ตรวจสอบไม่สำเร็จ: ${checkBody.error || checkRes.status}`);
+        return;
+      }
+      const accCount = Number(checkBody.covered_accounts_count || 0);
+      const pendingCount = Number(checkBody.pending_events_count || 0);
+      if (pendingCount === 0) {
+        const msg =
+          accCount > 0
+            ? `พบ ${fmt(accCount)} บัญชีที่ขอข้อมูลครบทุก Case ID แล้ว และไม่มีรายการ IP คงค้างที่ต้องปิดงานเพิ่ม`
+            : `ยังไม่พบบัญชีโซเชียลที่ขอข้อมูล ISP ครบทุกช่วงวันรับแจ้ง (ทุก Case ID) ที่มีรายการคงค้าง`;
+        setSyncMsg(msg);
+        window.alert(msg);
+        return;
+      }
+      const confirmed = window.confirm(
+        `พบบัญชีโซเชียลที่ขอข้อมูล ISP ครบทุกช่วงวันรับแจ้ง (ครบทุก Case ID) จำนวน ${fmt(accCount)} บัญชี\n` +
+          `และมีรายการ IP อื่นๆ ที่ยังไม่ได้ดำเนินการของบัญชีเหล่านี้จำนวน ${fmt(pendingCount)} รายการ\n\n` +
+          `ต้องการติ๊ก "ไม่ต้องขอข้อมูล IP" และหมายเหตุ "ขอข้อมูลตามช่วงก่อเหตุเรียบร้อยแล้ว" ให้ทั้งหมดใช่หรือไม่?`
+      );
+      if (!confirmed) {
+        setSyncMsg("");
+        return;
+      }
+      setSyncMsg(`กำลังอัปเดต ${fmt(pendingCount)} รายการเป็น "ไม่ต้องขอข้อมูล IP (ขอข้อมูลตามช่วงก่อเหตุเรียบร้อยแล้ว)"...`);
+      const res = await fetch("/api/admin/events/complete-covered-cases", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) {
+        setSyncMsg(`อัปเดตไม่สำเร็จ: ${body.error || res.status}`);
+        window.alert(`อัปเดตไม่สำเร็จ: ${body.error || res.status}`);
+        return;
+      }
+      const doneMsg = `ดำเนินการเสร็จแล้ว! ปิดงานรายการ IP อื่นๆ ของ ${fmt(body.covered_accounts_count)} บัญชี สำเร็จ ${fmt(body.updated_count)} รายการ (ติ๊ก "ไม่ต้องขอข้อมูล IP" + หมายเหตุ "ขอข้อมูลตามช่วงก่อเหตุเรียบร้อยแล้ว")`;
+      setSyncMsg(doneMsg);
+      window.alert(doneMsg);
+      fetchEvents(true);
+    } catch {
+      setSyncMsg("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์");
+    }
+  }
+
   async function handleQuickToggleCheckbox(
     row: IpEventRow,
     field: "unavailable" | "requested" | "replied" | "received" | "no_ip_request_needed",
@@ -1066,20 +1112,6 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                 >
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> ปิดงานบัญชี
                 </button>
-                <button
-                  onClick={handleExpire90Days}
-                  className="px-2.5 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-400/50 text-rose-200 flex items-center gap-1"
-                  title="ตรวจสอบและอัปเดตรายการ IP ที่เกิน 90 วันและยังไม่ได้ขอข้อมูลจาก ISP เป็น ขอข้อมูลไม่ได้ (ข้อมูลเกิน 90 วัน)"
-                >
-                  <Clock className="w-3.5 h-3.5 text-[#ffd000]" /> อัปเดต IP เกิน 90 วัน
-                </button>
-                <button
-                  onClick={handleExpireTrueDtac20Days}
-                  className="px-2.5 py-1.5 rounded-lg bg-sky-950/70 hover:bg-sky-900 border border-sky-400/50 text-sky-200 flex items-center gap-1"
-                  title="ตรวจสอบรายการ IP ของ DTAC/TRUE Mobile ที่เกิน 20 วัน พร้อมไฮไลท์พื้นสีฟ้าและหมายเหตุ TRUE/DTAC ข้อมูลเกิน 20 วัน"
-                >
-                  <Clock className="w-3.5 h-3.5 text-sky-300" /> TRUE/DTAC เกิน 20 วัน
-                </button>
               </>
             )}
             <button
@@ -1090,6 +1122,36 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
             </button>
           </div>
         </div>
+
+        {/* Desktop Row 2: Automated Status Check & Batch Update Toolbar */}
+        {user.role === "master_admin" && (
+          <div className="hidden xl:block border-t border-[#1d3a78]/80 bg-[#040e24]">
+            <div className="max-w-[1680px] mx-auto px-4 py-1.5 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-[11px] font-semibold text-blue-300/90 mr-1">ตรวจสอบ &amp; อัปเดตสถานะอัตโนมัติ:</span>
+              <button
+                onClick={handleExpire90Days}
+                className="px-3 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-400/50 text-rose-200 flex items-center gap-1.5 font-medium"
+                title="ตรวจสอบและอัปเดตรายการ IP ที่เกิน 90 วันและยังไม่ได้ขอข้อมูลจาก ISP เป็น ขอข้อมูลไม่ได้ (ข้อมูลเกิน 90 วัน)"
+              >
+                <Clock className="w-3.5 h-3.5 text-[#ffd000]" /> อัปเดต IP เกิน 90 วัน
+              </button>
+              <button
+                onClick={handleExpireTrueDtac20Days}
+                className="px-3 py-1.5 rounded-lg bg-sky-950/70 hover:bg-sky-900 border border-sky-400/50 text-sky-200 flex items-center gap-1.5 font-medium"
+                title="ตรวจสอบรายการ IP ของ DTAC/TRUE Mobile ที่เกิน 20 วัน พร้อมไฮไลท์พื้นสีฟ้าและหมายเหตุ TRUE/DTAC ข้อมูลเกิน 20 วัน"
+              >
+                <Clock className="w-3.5 h-3.5 text-sky-300" /> TRUE/DTAC เกิน 20 วัน
+              </button>
+              <button
+                onClick={handleCompleteCoveredCases}
+                className="px-3 py-1.5 rounded-lg bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-400/50 text-emerald-200 flex items-center gap-1.5 font-medium"
+                title="ตรวจจับบัญชีที่ขอข้อมูล ISP ครอบคลุมช่วงวันก่อเหตุ 7 วัน (±3 วัน) ครบทุก Case ID แล้ว และติ๊กรายการ IP อื่นของบัญชีนั้นเป็น ไม่ต้องขอข้อมูล IP"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" /> อัปเดตขอ ISP ครบช่วง 7 วันแล้ว
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Mobile / Tablet Collapsible Action Drawer */}
         {mobileMenuOpen && (
@@ -1150,6 +1212,12 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                     className="px-3 py-2 rounded-lg bg-sky-950/70 border border-sky-400/50 text-sky-200 flex items-center justify-center gap-1.5"
                   >
                     <Clock className="w-4 h-4 text-sky-300" /> TRUE/DTAC เกิน 20 วัน
+                  </button>
+                  <button
+                    onClick={() => { setMobileMenuOpen(false); handleCompleteCoveredCases(); }}
+                    className="px-3 py-2 rounded-lg bg-emerald-950/70 border border-emerald-400/50 text-emerald-200 flex items-center justify-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-300" /> ครบช่วง 7 วันแล้ว
                   </button>
                   <button
                     onClick={() => { setMobileMenuOpen(false); handleRequestSync(); }}

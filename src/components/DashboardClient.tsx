@@ -21,6 +21,7 @@ import {
   BarChart3,
   ShieldAlert,
   Clock,
+  FileText,
 } from "lucide-react";
 import type { SessionUser } from "@/lib/auth";
 import ColumnFilterPopover from "./ColumnFilterPopover";
@@ -32,6 +33,7 @@ import ExcelManagerView, {
 import CountryIspStatsView from "./CountryIspStatsView";
 import ScammerCasesSheet from "./ScammerCasesSheet";
 import ZipUploadModal from "./ZipUploadModal";
+import SubpoenaBatchModal from "./SubpoenaBatchModal";
 import { formatDateDMY, formatDateTimeDMY, getCaseWindowHighlight, isTrueDtacOver20dResult } from "@/lib/date-format";
 
 type IpEventRow = ExcelEventRow;
@@ -260,6 +262,8 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
   const [completeAccountId, setCompleteAccountId] = useState("");
   const [completeReason, setCompleteReason] = useState("ได้รับข้อมูลบัญชีครบถ้วนแล้ว ไม่ต้องขอข้อมูล IP เพิ่ม");
   const [completeMsg, setCompleteMsg] = useState("");
+  const [selectedSubpoenaKeys, setSelectedSubpoenaKeys] = useState<string[]>([]);
+  const [subpoenaOpen, setSubpoenaOpen] = useState(false);
 
   const fetchEvents = useCallback(
     async (forceFull = false) => {
@@ -1634,6 +1638,15 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                 </h2>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {user.role === "master_admin" && selectedSubpoenaKeys.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSubpoenaOpen(true)}
+                    className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold flex items-center gap-1.5 shadow"
+                  >
+                    <FileText className="w-3.5 h-3.5" /> ออกหมายเรียก ({selectedSubpoenaKeys.length} รายการ)
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setActiveView("excel")}
@@ -1773,6 +1786,26 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                     <th className="sticky left-[304px] z-20 bg-[#05112b] px-2.5 py-3 border-r-2 border-r-[#ffd000]/60 min-w-[68px] w-[68px] text-center text-[#ffd000]">
                       Port
                     </th>
+                    {user.role === "master_admin" && (
+                      <th className="px-2 py-3 text-center" title="เลือกรายการเพื่อออกหมายเรียกพยานเอกสาร">
+                        <input
+                          type="checkbox"
+                          checked={
+                            (data?.records || []).length > 0 &&
+                            (data?.records || []).every((r) => selectedSubpoenaKeys.includes(r.record_key))
+                          }
+                          onChange={(e) => {
+                            const visibleKeys = (data?.records || []).map((r) => r.record_key);
+                            if (e.target.checked) {
+                              setSelectedSubpoenaKeys((prev) => [...new Set([...prev, ...visibleKeys])]);
+                            } else {
+                              setSelectedSubpoenaKeys((prev) => prev.filter((k) => !visibleKeys.includes(k)));
+                            }
+                          }}
+                          className="accent-violet-400 w-3.5 h-3.5 cursor-pointer"
+                        />
+                      </th>
+                    )}
                     <th className="px-3 py-3">
                       <div className="inline-flex items-center gap-1">
                         <span className="cursor-pointer hover:text-[#ffd000]" onClick={() => handleSort("platform")}>แพลตฟอร์ม{sortIndicator("platform")}</span>
@@ -1896,6 +1929,22 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                         <td className={`sticky left-[304px] z-10 ${stickyBg} px-2.5 py-2.5 border-r-2 border-r-[#ffd000]/60 font-mono text-blue-200 text-center min-w-[68px] w-[68px]`}>
                           {row.port ?? "—"}
                         </td>
+                        {user.role === "master_admin" && (
+                          <td className="px-2 py-2.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedSubpoenaKeys.includes(row.record_key)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedSubpoenaKeys((prev) => [...new Set([...prev, row.record_key])]);
+                                } else {
+                                  setSelectedSubpoenaKeys((prev) => prev.filter((k) => k !== row.record_key));
+                                }
+                              }}
+                              className="accent-violet-400 w-3.5 h-3.5 cursor-pointer"
+                            />
+                          </td>
+                        )}
                         <td className="px-3 py-2.5">
                           <span className="px-2 py-0.5 rounded bg-[#133273] text-[#ffd000] font-semibold">
                             {row.platform}
@@ -2358,6 +2407,16 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
           </form>
         </div>
       )}
+
+      <SubpoenaBatchModal
+        open={subpoenaOpen}
+        recordKeys={selectedSubpoenaKeys}
+        onClose={() => setSubpoenaOpen(false)}
+        onCommitted={() => {
+          setSelectedSubpoenaKeys([]);
+          fetchEvents(true);
+        }}
+      />
     </div>
   );
 }

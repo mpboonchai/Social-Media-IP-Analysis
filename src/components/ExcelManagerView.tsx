@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Save, Copy, CheckSquare, ArrowUpDown, RotateCcw, Download, FileSpreadsheet, Upload } from "lucide-react";
+import { Save, Copy, CheckSquare, ArrowUpDown, RotateCcw, Download, FileSpreadsheet, Upload, FileText } from "lucide-react";
 import ColumnFilterPopover from "./ColumnFilterPopover";
+import SubpoenaBatchModal from "./SubpoenaBatchModal";
 import { formatDateDMY, formatDateTimeDMY, getCaseWindowHighlight, isTrueDtacOver20dResult } from "@/lib/date-format";
 
 export interface ExcelEventRow {
@@ -116,6 +117,7 @@ export default function ExcelManagerView({
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
+  const [subpoenaOpen, setSubpoenaOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [bulkStatus, setBulkStatus] = useState<
@@ -380,6 +382,13 @@ export default function ExcelManagerView({
             className="px-3 py-1.5 rounded-lg bg-[#ffd000] hover:bg-[#eab308] text-[#05112b] font-bold"
           >
             ใช้กับแถวที่เลือก
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubpoenaOpen(true)}
+            className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-bold flex items-center gap-1.5 shadow"
+          >
+            <FileText className="w-3.5 h-3.5" /> ออกหมายเรียกพยานเอกสาร ({selectedKeys.length} รายการ)
           </button>
         </div>
       )}
@@ -691,6 +700,16 @@ export default function ExcelManagerView({
           </table>
         </div>
       </div>
+
+      <SubpoenaBatchModal
+        open={subpoenaOpen}
+        recordKeys={selectedKeys}
+        onClose={() => setSubpoenaOpen(false)}
+        onCommitted={() => {
+          setSelectedKeys([]);
+          onSaved();
+        }}
+      />
     </div>
   );
 }

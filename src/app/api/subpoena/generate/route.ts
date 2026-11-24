@@ -41,7 +41,7 @@ function sanitizeFilePart(s: string): string {
 async function getNextSuggestedLetterNumber(pool: mysql.Pool, prefix: string): Promise<number> {
   const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const [rows] = await pool.query<mysql.RowDataPacket[]>(
-    `SELECT letter_number FROM ip_request_tracking WHERE letter_number LIKE ? ORDER BY id DESC LIMIT 2000`,
+    `SELECT letter_number FROM ip_request_tracking WHERE letter_number LIKE ? ORDER BY ip_event_id DESC LIMIT 2000`,
     [`${prefix}%`]
   );
   let maxNum = 1000;
@@ -57,6 +57,7 @@ async function getNextSuggestedLetterNumber(pool: mysql.Pool, prefix: string): P
 }
 
 export async function POST(req: NextRequest) {
+  try {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (user.role !== "master_admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -347,4 +348,10 @@ export async function POST(req: NextRequest) {
     zip_base64: zipBase64,
     letters: results,
   });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
 }

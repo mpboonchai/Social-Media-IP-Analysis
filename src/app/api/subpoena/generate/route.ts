@@ -243,7 +243,7 @@ export async function POST(req: NextRequest) {
     const destination = buildDestinationForPlatforms(platformsArr);
     const ispShort = getIspShortCode(g.contact, g.display_name);
     const docxFilename = `TCSD2_${thaiYear2Digit}-${seqNo}_${ispShort}.docx`;
-    const includeTrafficLog90d = !isAisOrTrueDtac(g.contact?.provider_code, g.display_name);
+    const includeTrafficLog90d = !isAisOrTrueDtac(g.contact?.provider_code, g.display_name, g.group_key);
 
     const email = renderEmailDraft({
       contact: g.contact,

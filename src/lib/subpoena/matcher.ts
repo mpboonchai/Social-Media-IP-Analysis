@@ -114,11 +114,26 @@ export function matchIspContact(
   return null;
 }
 
-export function isAisOrTrueDtac(providerCode?: string | null, providerName?: string | null): boolean {
+export function isAisOrTrueDtac(
+  providerCode?: string | null,
+  providerName?: string | null,
+  rawNetworkName?: string | null
+): boolean {
   const code = String(providerCode || "").toUpperCase();
-  if (code === "ISP001" || code === "ISP002" || code === "ISP039") return true;
-  const name = String(providerName || "").toLowerCase();
-  return /ais|awn|advanced\s+wireless|truemove|true\s*corp|true\s*internet|truenet|dtac/.test(name);
+  const rawNet = String(rawNetworkName || "").toLowerCase();
+  // Exclude Mobile & Home Broadband ISPs from Clause 3 (90-day traffic log):
+  // TRUE/DTAC Mobile (ISP001), AIS/AIS Fibre (ISP002), TrueNet/True Internet (ISP039),
+  // 3BB / Triple T Broadband (ISP022), TOT Broadband (ISP034), and NT Broadband (ISP005 unless CAT-IDC)
+  if (code === "ISP001" || code === "ISP002" || code === "ISP039" || code === "ISP022" || code === "ISP034") {
+    return true;
+  }
+  if (code === "ISP005" && !/idc/i.test(rawNet)) {
+    return true;
+  }
+  const combined = `${providerName || ""} ${rawNetworkName || ""}`.toLowerCase();
+  return /ais|awn|advanced\s+wireless|truemove|true\s*corp|true\s*internet|truenet|true_bb|truebb|dtac|3bb|triple\s*t|tttbb|totnet|tot-net|tot-th|cat-bb/.test(
+    combined
+  );
 }
 
 const SHORT_CODE_MAP: Record<string, string> = {

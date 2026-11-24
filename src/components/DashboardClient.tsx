@@ -745,25 +745,39 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
       }
       const accCount = Number(checkBody.covered_accounts_count || 0);
       const pendingCount = Number(checkBody.pending_events_count || 0);
-      if (pendingCount === 0) {
+      const reopenAccCount = Number(checkBody.reopen_accounts_count || 0);
+      const reopenCount = Number(checkBody.reopen_events_count || 0);
+
+      if (pendingCount === 0 && reopenCount === 0) {
         const msg =
           accCount > 0
-            ? `พบ ${fmt(accCount)} บัญชีที่ขอข้อมูลครบทุก Case ID แล้ว และไม่มีรายการ IP คงค้างที่ต้องปิดงานเพิ่ม`
-            : `ยังไม่พบบัญชีโซเชียลที่ขอข้อมูล ISP ครบทุกช่วงวันรับแจ้ง (ทุก Case ID) ที่มีรายการคงค้าง`;
+            ? `ตรวจสอบเรียบร้อยแล้ว: พบ ${fmt(accCount)} บัญชีที่ขอข้อมูลครบทุก Case ID แล้ว และไม่มีรายการที่ต้องปิดงานเพิ่มหรือเปิดงานคืน`
+            : `ตรวจสอบเรียบร้อยแล้ว: ยังไม่มีรายการที่ต้องปิดงานเพิ่มหรือเปิดงานคืน`;
         setSyncMsg(msg);
         window.alert(msg);
         return;
       }
+
+      const lines: string[] = [];
+      if (pendingCount > 0) {
+        lines.push(
+          `• ปิดงานเพิ่ม: พบ ${fmt(accCount)} บัญชีที่ขอครบทุก Case ID แล้ว → ติ๊ก "ไม่ต้องขอข้อมูล IP" + หมายเหตุ "ขอข้อมูลตามช่วงก่อเหตุเรียบร้อยแล้ว" จำนวน ${fmt(pendingCount)} รายการ`
+        );
+      }
+      if (reopenCount > 0) {
+        lines.push(
+          `• เปิดงานคืน (พบเคสใหม่เพิ่ม): พบ ${fmt(reopenAccCount)} บัญชีที่มีวันรับแจ้งใหม่เพิ่มเข้ามาและยังขอ ISP ไม่ครบ → ยกเลิกติ๊ก "ไม่ต้องขอข้อมูล IP" กลับเป็นยังไม่ดำเนินการ จำนวน ${fmt(reopenCount)} รายการ`
+        );
+      }
+
       const confirmed = window.confirm(
-        `พบบัญชีโซเชียลที่ขอข้อมูล ISP ครบทุกช่วงวันรับแจ้ง (ครบทุก Case ID) จำนวน ${fmt(accCount)} บัญชี\n` +
-          `และมีรายการ IP อื่นๆ ที่ยังไม่ได้ดำเนินการของบัญชีเหล่านี้จำนวน ${fmt(pendingCount)} รายการ\n\n` +
-          `ต้องการติ๊ก "ไม่ต้องขอข้อมูล IP" และหมายเหตุ "ขอข้อมูลตามช่วงก่อเหตุเรียบร้อยแล้ว" ให้ทั้งหมดใช่หรือไม่?`
+        `สรุปผลการตรวจสอบความครอบคลุมทุก Case ID:\n\n${lines.join("\n\n")}\n\nต้องการดำเนินการอัปเดตทั้งหมดใช่หรือไม่?`
       );
       if (!confirmed) {
         setSyncMsg("");
         return;
       }
-      setSyncMsg(`กำลังอัปเดต ${fmt(pendingCount)} รายการเป็น "ไม่ต้องขอข้อมูล IP (ขอข้อมูลตามช่วงก่อเหตุเรียบร้อยแล้ว)"...`);
+      setSyncMsg("กำลังอัปเดตสถานะความครอบคลุมตามช่วงวันก่อเหตุ...");
       const res = await fetch("/api/admin/events/complete-covered-cases", { method: "POST" });
       const body = await res.json();
       if (!res.ok) {
@@ -771,7 +785,14 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
         window.alert(`อัปเดตไม่สำเร็จ: ${body.error || res.status}`);
         return;
       }
-      const doneMsg = `ดำเนินการเสร็จแล้ว! ปิดงานรายการ IP อื่นๆ ของ ${fmt(body.covered_accounts_count)} บัญชี สำเร็จ ${fmt(body.updated_count)} รายการ (ติ๊ก "ไม่ต้องขอข้อมูล IP" + หมายเหตุ "ขอข้อมูลตามช่วงก่อเหตุเรียบร้อยแล้ว")`;
+      const doneParts: string[] = [];
+      if (Number(body.updated_count || 0) > 0) {
+        doneParts.push(`ปิดงานเพิ่ม ${fmt(body.updated_count)} รายการ (${fmt(body.covered_accounts_count)} บัญชี)`);
+      }
+      if (Number(body.reopened_count || 0) > 0) {
+        doneParts.push(`เปิดงานคืน ${fmt(body.reopened_count)} รายการ (${fmt(body.reopened_accounts_count)} บัญชีที่มีเคสใหม่เพิ่ม)`);
+      }
+      const doneMsg = `ดำเนินการเสร็จแล้ว! ${doneParts.join(" · ")}`;
       setSyncMsg(doneMsg);
       window.alert(doneMsg);
       fetchEvents(true);

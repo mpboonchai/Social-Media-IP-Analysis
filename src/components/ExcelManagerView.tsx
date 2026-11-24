@@ -3,7 +3,7 @@
 import React, { useRef, useState } from "react";
 import { Save, Copy, CheckSquare, ArrowUpDown, RotateCcw, Download, FileSpreadsheet, Upload } from "lucide-react";
 import ColumnFilterPopover from "./ColumnFilterPopover";
-import { formatDateDMY, formatDateTimeDMY, getCaseWindowHighlight } from "@/lib/date-format";
+import { formatDateDMY, formatDateTimeDMY, getCaseWindowHighlight, isTrueDtacOver20dResult } from "@/lib/date-format";
 
 export interface ExcelEventRow {
   record_key: string;
@@ -402,6 +402,10 @@ export default function ExcelManagerView({
             <span className="w-3 h-3 rounded-sm bg-[#3d3312] border border-amber-400 inline-block" />
             ช่วงวันก่อเหตุ 7 วัน / ±3 วัน (สีเหลือง)
           </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-sm bg-[#0d3559] border border-sky-400 inline-block" />
+            TRUE/DTAC ข้อมูลเกิน 20 วัน (สีฟ้า)
+          </span>
         </div>
         <div className="overflow-x-auto max-h-[68vh]">
           <table className="w-full text-left text-xs border-collapse whitespace-nowrap">
@@ -536,11 +540,14 @@ export default function ExcelManagerView({
                 const d = getRowDraft(row);
                 const isDirty = Boolean(drafts[row.record_key]);
                 const isSelected = selectedKeys.includes(row.record_key);
+                const isBlue20d = isTrueDtacOver20dResult(d.result);
                 const hl = getCaseWindowHighlight(row.local_time, row.reported_date, row.case_window_match);
                 const stickyBg = isDirty
                   ? "bg-[#24210f]"
                   : isSelected
                   ? "bg-[#15316e]"
+                  : isBlue20d
+                  ? "bg-[#0d3559]"
                   : hl === "reported_day"
                   ? "bg-[#4c1d2a]"
                   : hl === "window_7d"
@@ -552,6 +559,8 @@ export default function ExcelManagerView({
                   ? "bg-[#ffd000]/10 hover:bg-[#122b63]/80"
                   : isSelected
                   ? "bg-[#1a3a82]/50 hover:bg-[#122b63]/80"
+                  : isBlue20d
+                  ? "bg-[#0d3559] hover:bg-[#124573]"
                   : hl === "reported_day"
                   ? "bg-[#4c1d2a] hover:bg-[#5f2434]"
                   : hl === "window_7d"
@@ -561,6 +570,8 @@ export default function ExcelManagerView({
                   : "bg-[#081738] hover:bg-[#122b63]/80";
                 const leftAccent = isDirty
                   ? "border-l-2 border-l-[#ffd000]"
+                  : isBlue20d
+                  ? "border-l-4 border-l-sky-400"
                   : hl === "reported_day"
                   ? "border-l-4 border-l-rose-400"
                   : hl === "window_7d"

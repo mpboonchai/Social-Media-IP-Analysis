@@ -32,7 +32,7 @@ import ExcelManagerView, {
 import CountryIspStatsView from "./CountryIspStatsView";
 import ScammerCasesSheet from "./ScammerCasesSheet";
 import ZipUploadModal from "./ZipUploadModal";
-import { formatDateDMY, formatDateTimeDMY, getCaseWindowHighlight } from "@/lib/date-format";
+import { formatDateDMY, formatDateTimeDMY, getCaseWindowHighlight, isTrueDtacOver20dResult } from "@/lib/date-format";
 
 type IpEventRow = ExcelEventRow;
 
@@ -688,6 +688,48 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
     }
   }
 
+  async function handleExpireTrueDtac20Days() {
+    setSyncMsg("กำลังตรวจสอบรายการ IP ของ DTAC/TRUE Mobile ที่เกิน 20 วัน...");
+    try {
+      const checkRes = await fetch("/api/admin/events/expire-truedtac-20d", { cache: "no-store" });
+      const checkBody = await checkRes.json();
+      if (!checkRes.ok) {
+        setSyncMsg(`ตรวจสอบไม่สำเร็จ: ${checkBody.error || checkRes.status}`);
+        return;
+      }
+      const pendingCount = Number(checkBody.pending_expired_count || 0);
+      const cutoffDate = formatDateDMY(checkBody.cutoff_date || "");
+      if (pendingCount === 0) {
+        const msg = `ไม่พบรายการ DTAC/TRUE Mobile ที่เกิน 20 วัน (ก่อนวันที่ ${cutoffDate}) และยังไม่ได้หมายเหตุ`;
+        setSyncMsg(msg);
+        window.alert(msg);
+        return;
+      }
+      const confirmed = window.confirm(
+        `พบรายการ IP ของ DTAC / TRUE Mobile ที่เกิน 20 วัน (ใช้งานก่อนวันที่ ${cutoffDate}) และยังไม่ได้ดำเนินการ จำนวน ${fmt(pendingCount)} รายการ\n\n` +
+          `ต้องการหมายเหตุในช่องผลลัพธ์เป็น "TRUE/DTAC ข้อมูลเกิน 20 วัน" และไฮไลท์พื้นสีฟ้าทั้งหมดใช่หรือไม่?`
+      );
+      if (!confirmed) {
+        setSyncMsg("");
+        return;
+      }
+      setSyncMsg(`กำลังอัปเดต ${fmt(pendingCount)} รายการเป็น "TRUE/DTAC ข้อมูลเกิน 20 วัน"...`);
+      const res = await fetch("/api/admin/events/expire-truedtac-20d", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) {
+        setSyncMsg(`อัปเดตไม่สำเร็จ: ${body.error || res.status}`);
+        window.alert(`อัปเดตไม่สำเร็จ: ${body.error || res.status}`);
+        return;
+      }
+      const doneMsg = `ดำเนินการเสร็จแล้ว! อัปเดตรายการ DTAC/TRUE Mobile เกิน 20 วันสำเร็จ ${fmt(body.updated_count)} รายการ (ไฮไลท์พื้นสีฟ้า + หมายเหตุ "TRUE/DTAC ข้อมูลเกิน 20 วัน")`;
+      setSyncMsg(doneMsg);
+      window.alert(doneMsg);
+      fetchEvents(true);
+    } catch {
+      setSyncMsg("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์");
+    }
+  }
+
   async function handleQuickToggleCheckbox(
     row: IpEventRow,
     field: "unavailable" | "requested" | "replied" | "received" | "no_ip_request_needed",
@@ -1027,6 +1069,13 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                 >
                   <Clock className="w-3.5 h-3.5 text-[#ffd000]" /> อัปเดต IP เกิน 90 วัน
                 </button>
+                <button
+                  onClick={handleExpireTrueDtac20Days}
+                  className="px-2.5 py-1.5 rounded-lg bg-sky-950/70 hover:bg-sky-900 border border-sky-400/50 text-sky-200 flex items-center gap-1"
+                  title="ตรวจสอบรายการ IP ของ DTAC/TRUE Mobile ที่เกิน 20 วัน พร้อมไฮไลท์พื้นสีฟ้าและหมายเหตุ TRUE/DTAC ข้อมูลเกิน 20 วัน"
+                >
+                  <Clock className="w-3.5 h-3.5 text-sky-300" /> TRUE/DTAC เกิน 20 วัน
+                </button>
               </>
             )}
             <button
@@ -1091,6 +1140,12 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                     className="px-3 py-2 rounded-lg bg-rose-950/60 border border-rose-400/50 text-rose-200 flex items-center justify-center gap-1.5"
                   >
                     <Clock className="w-4 h-4 text-[#ffd000]" /> IP เกิน 90 วัน
+                  </button>
+                  <button
+                    onClick={() => { setMobileMenuOpen(false); handleExpireTrueDtac20Days(); }}
+                    className="px-3 py-2 rounded-lg bg-sky-950/70 border border-sky-400/50 text-sky-200 flex items-center justify-center gap-1.5"
+                  >
+                    <Clock className="w-4 h-4 text-sky-300" /> TRUE/DTAC เกิน 20 วัน
                   </button>
                   <button
                     onClick={() => { setMobileMenuOpen(false); handleRequestSync(); }}
@@ -1614,19 +1669,25 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                 <span className="w-3 h-3 rounded-sm bg-[#3d3312] border border-amber-400 inline-block" />
                 ช่วงวันก่อเหตุ 7 วัน / ±3 วัน (สีเหลือง)
               </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-sm bg-[#0d3559] border border-sky-400 inline-block" />
+                TRUE/DTAC ข้อมูลเกิน 20 วัน (สีฟ้า)
+              </span>
             </div>
 
             {/* Mobile Card List (< md) */}
             <div className="md:hidden divide-y divide-[#1d3a78]/70">
               {(data?.records || []).map((row) => {
                 const st = statusBadge(row);
+                const isBlue20d = isTrueDtacOver20dResult(row.result);
                 const hl = getCaseWindowHighlight(row.local_time, row.reported_date, row.case_window_match);
-                const cardCls =
-                  hl === "reported_day"
-                    ? "bg-[#4c1d2a]/90 border-l-4 border-l-rose-400"
-                    : hl === "window_7d"
-                    ? "bg-[#3d3312]/90 border-l-4 border-l-amber-400"
-                    : "";
+                const cardCls = isBlue20d
+                  ? "bg-[#0d3559]/90 border-l-4 border-l-sky-400"
+                  : hl === "reported_day"
+                  ? "bg-[#4c1d2a]/90 border-l-4 border-l-rose-400"
+                  : hl === "window_7d"
+                  ? "bg-[#3d3312]/90 border-l-4 border-l-amber-400"
+                  : "";
                 return (
                   <div key={row.record_key} className={`p-3.5 space-y-2 text-xs ${cardCls}`}>
                     <div className="flex items-center justify-between gap-2">
@@ -1799,27 +1860,31 @@ export default function DashboardClient({ initialUser }: { initialUser: SessionU
                 <tbody className="divide-y divide-[#163066]">
                   {(data?.records || []).map((row, idx) => {
                     const st = statusBadge(row);
+                    const isBlue20d = isTrueDtacOver20dResult(row.result);
                     const hl = getCaseWindowHighlight(row.local_time, row.reported_date, row.case_window_match);
-                    const stickyBg =
-                      hl === "reported_day"
-                        ? "bg-[#4c1d2a]"
-                        : hl === "window_7d"
-                        ? "bg-[#3d3312]"
-                        : idx % 2 === 0
-                        ? "bg-[#0a1d45]"
-                        : "bg-[#081738]";
-                    const rowHover =
-                      hl === "reported_day"
-                        ? "hover:bg-[#5f2434]"
-                        : hl === "window_7d"
-                        ? "hover:bg-[#4e4117]"
-                        : "hover:bg-[#10285e]/70";
-                    const leftAccent =
-                      hl === "reported_day"
-                        ? "border-l-4 border-l-rose-400"
-                        : hl === "window_7d"
-                        ? "border-l-4 border-l-amber-400"
-                        : "";
+                    const stickyBg = isBlue20d
+                      ? "bg-[#0d3559]"
+                      : hl === "reported_day"
+                      ? "bg-[#4c1d2a]"
+                      : hl === "window_7d"
+                      ? "bg-[#3d3312]"
+                      : idx % 2 === 0
+                      ? "bg-[#0a1d45]"
+                      : "bg-[#081738]";
+                    const rowHover = isBlue20d
+                      ? "hover:bg-[#124573]"
+                      : hl === "reported_day"
+                      ? "hover:bg-[#5f2434]"
+                      : hl === "window_7d"
+                      ? "hover:bg-[#4e4117]"
+                      : "hover:bg-[#10285e]/70";
+                    const leftAccent = isBlue20d
+                      ? "border-l-4 border-l-sky-400"
+                      : hl === "reported_day"
+                      ? "border-l-4 border-l-rose-400"
+                      : hl === "window_7d"
+                      ? "border-l-4 border-l-amber-400"
+                      : "";
                     return (
                       <tr key={row.record_key} className={`${stickyBg} ${rowHover}`}>
                         <td className={`sticky left-0 z-10 ${stickyBg} ${leftAccent} px-3 py-2.5 border-r border-[#163066] font-mono text-blue-100 min-w-[156px] w-[156px]`}>

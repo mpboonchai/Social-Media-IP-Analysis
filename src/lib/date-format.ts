@@ -74,3 +74,10 @@ export function getCaseWindowHighlight(
   return caseWindowMatch ? "window_7d" : "none";
 }
 
+export const TRUE_DTAC_20D_NOTE = "TRUE/DTAC ข้อมูลเกิน 20 วัน";
+
+export function isTrueDtacOver20dResult(result?: string | null): boolean {
+  return String(result ?? "").includes(TRUE_DTAC_20D_NOTE);
+}
+
+

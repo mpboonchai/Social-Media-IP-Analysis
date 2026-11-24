@@ -5,7 +5,7 @@ import type mysql from "mysql2/promise";
 import { getPool } from "@/db";
 import { getSessionUser } from "@/lib/auth";
 import { buildEventWhereClause } from "@/lib/events-query";
-import { getCaseWindowHighlight } from "@/lib/date-format";
+import { getCaseWindowHighlight, isTrueDtacOver20dResult } from "@/lib/date-format";
 import { ipToBuffer } from "@/lib/ip-utils";
 
 export const maxDuration = 60;
@@ -140,6 +140,11 @@ export async function GET(req: NextRequest) {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: "FFFFF3BF" },
+      };
+      const fillTrueDtac20d: ExcelJS.Fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFDBEAFE" },
       };
 
       if (sheetMode !== "scammers") {
@@ -304,12 +309,17 @@ export async function GET(req: NextRequest) {
               ...r,
               status_label: computeStatusLabel(r),
             });
+            const isBlue20d = isTrueDtacOver20dResult(r.result ? String(r.result) : null);
             const hl = getCaseWindowHighlight(
               r.local_time ? String(r.local_time) : null,
               r.reported_date ? String(r.reported_date) : null,
               r.case_window_match
             );
-            if (hl === "reported_day") {
+            if (isBlue20d) {
+              excelRow.eachCell({ includeEmpty: true }, (cell) => {
+                cell.fill = fillTrueDtac20d;
+              });
+            } else if (hl === "reported_day") {
               excelRow.eachCell({ includeEmpty: true }, (cell) => {
                 cell.fill = fillReportedDay;
               });

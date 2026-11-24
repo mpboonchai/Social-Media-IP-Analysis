@@ -37,6 +37,7 @@ export interface SubpoenaDocxInput {
   contact_phone: string;
   contact_email: string;
   deadline?: string;
+  include_traffic_log_90d?: boolean;
   events: SubpoenaEventItem[];
 }
 
@@ -184,6 +185,29 @@ export async function generateSubpoenaDocx(input: SubpoenaDocxInput): Promise<Bu
     caseRuns.slice(2).find("w\\:t").text("");
   } else {
     setParagraphText($, pCase, `ด้วยเหตุ ${caseRest}`);
+  }
+
+  // 4b. Clause 1 (bodyParagraphs[6]): updated subscriber identity fields (Thai ID / Passport / Juristic ID)
+  const clause1Text =
+    "ตรวจสอบข้อมูล ชื่อ-สกุล, เลขประจำตัวประชาชน/หมายเลขหนังสือเดินทาง/เลขนิติบุคคล, ที่อยู่, อีเมล, หมายเลขโทรศัพท์, หมายเลข MAC Address ที่ใช้เชื่อมต่อ และรายละเอียดการขอจดทะเบียน รวมถึงข้อมูลชื่อ ที่อยู่ ที่ใช้ในการจัดส่งเอกสารของผู้ใช้บริการดังกล่าว";
+  const pClause1 = bodyParagraphs.eq(6);
+  setParagraphText($, pClause1, clause1Text);
+
+  // 4c. Clause 3 (optional — all ISPs EXCEPT AIS & TRUE/DTAC): 90-day computer traffic log
+  if (input.include_traffic_log_90d) {
+    const issueUtcMs = Date.UTC(y, m - 1, d);
+    const from90dDate = new Date(issueUtcMs - 90 * 86_400_000);
+    const fromIso = from90dDate.toISOString().slice(0, 10);
+    const toIso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const clause3Text =
+      `ข้อมูลจราจรทางคอมพิวเตอร์ (Log File) ของผู้ใช้บริการดังกล่าว ตั้งแต่ วันที่ ${formatThaiDateLong(fromIso)} ถึง วันที่ ${formatThaiDateLong(toIso)} ` +
+      `ได้แก่ วันเวลาที่เข้า-ออกระบบ (Login/Logout), หมายเลข IP Address ต้นทาง-ปลายทาง และพอร์ตเชื่อมต่อ (Port) เพื่อประโยชน์ในการสืบสวนสอบสวนและพิสูจน์ทราบตัวผู้กระทำความผิด (ถ้ามี)`;
+
+    // Clone P[6] (same Word auto-numbering w:numPr, font, indent, and zero drawings so signature in P[7] is never duplicated)
+    const pClause3Xml = $.html(pClause1);
+    const $pClause3 = $(pClause3Xml);
+    setParagraphText($, $pClause3, clause3Text);
+    bodyParagraphs.eq(7).after($pClause3);
   }
 
   // 5. Coordinator & email cell in Table 3 row 2 cell 0

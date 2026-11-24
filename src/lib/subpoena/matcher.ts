@@ -114,15 +114,91 @@ export function matchIspContact(
   return null;
 }
 
+export function isAisOrTrueDtac(providerCode?: string | null, providerName?: string | null): boolean {
+  const code = String(providerCode || "").toUpperCase();
+  if (code === "ISP001" || code === "ISP002" || code === "ISP039") return true;
+  const name = String(providerName || "").toLowerCase();
+  return /ais|awn|advanced\s+wireless|truemove|true\s*corp|true\s*internet|truenet|dtac/.test(name);
+}
+
+const SHORT_CODE_MAP: Record<string, string> = {
+  ISP001: "TRUE_DTAC",
+  ISP002: "AIS",
+  ISP003: "CSLOXINFO",
+  ISP004: "UIH",
+  ISP005: "NT",
+  ISP006: "CLOUD_HOSTING",
+  ISP007: "READYIDC",
+  ISP008: "JASTEL",
+  ISP009: "PACIFIC_CITIC",
+  ISP010: "AWS",
+  ISP011: "ALIBABA_CLOUD",
+  ISP012: "GTT",
+  ISP013: "OVH",
+  ISP014: "ZENLAYER",
+  ISP015: "TELKOMSIGMA",
+  ISP016: "MYTEL",
+  ISP017: "IMNCL",
+  ISP018: "GLOBALNET_MM",
+  ISP019: "IQI_MM",
+  ISP020: "CHEN_MM",
+  ISP022: "3BB",
+  ISP023: "INET",
+  ISP024: "SYMPHONY",
+  ISP025: "NIPA",
+  ISP026: "PROEN",
+  ISP027: "CLOUDFLARE",
+  ISP028: "GOOGLE",
+  ISP029: "AZURE",
+  ISP030: "DIGITALOCEAN",
+  ISP031: "ORACLE",
+  ISP032: "AKAMAI",
+  ISP033: "STARLINK",
+  ISP034: "TOT",
+  ISP035: "TAN_SPIRIT",
+  ISP036: "RUKCOM",
+  ISP037: "BANGMOD",
+  ISP038: "SAN_IDC",
+  ISP039: "TRUENET",
+};
+
+export function getIspShortCode(contact: IspContactRow | null, fallbackName: string): string {
+  if (contact && SHORT_CODE_MAP[contact.provider_code]) {
+    return SHORT_CODE_MAP[contact.provider_code];
+  }
+  const clean = String(fallbackName || "ISP")
+    .replace(/[^0-9A-Za-zก-๙]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 24);
+  return clean || "ISP";
+}
+
 export function buildDestinationForPlatforms(platforms: string[]): string {
   const set = new Set(platforms.map((p) => p.toLowerCase()));
+  const hasMeta = set.has("facebook") || set.has("instagram") || set.has("meta");
+  const hasTikTok = set.has("tiktok");
   const parts: string[] = [];
-  if (set.has("facebook") || set.has("instagram") || set.has("meta")) {
-    parts.push("www.facebook.com / www.instagram.com (แพลตฟอร์ม META)");
+
+  if (hasMeta) {
+    const domains: string[] = [];
+    if (set.has("facebook") || set.has("meta")) {
+      domains.push("facebook.com, www.facebook.com, m.facebook.com, *.facebook.com, *.fbcdn.net");
+    }
+    if (set.has("instagram")) {
+      domains.push("instagram.com, www.instagram.com, *.instagram.com, *.cdninstagram.com");
+    }
+    parts.push(
+      `${domains.join(", ")} รวมถึงหมายเลข IP Address ปลายทางภายใต้เครือข่าย Meta Platforms (AS32934) เช่น 31.13.64.0/18, 57.144.0.0/14, 129.134.0.0/16, 157.240.0.0/16, 163.70.128.0/17, 173.252.64.0/18 หรือบริการของ META`
+    );
   }
-  if (set.has("tiktok")) {
-    parts.push("www.tiktok.com หรือ 103.136.220.0/23 หรือบริการ TikTok");
+
+  if (hasTikTok) {
+    parts.push(
+      `www.tiktok.com, *.tiktok.com รวมถึงหมายเลข IP Address ปลายทางของเซิร์ฟเวอร์ เช่น 103.136.220.0/23, 103.136.221.27, 161.117.0.0/16, 47.246.0.0/16 หรือบริการของ Tiktok`
+    );
   }
+
   return parts.length ? parts.join(" และ ") : "แพลตฟอร์มสื่อสังคมออนไลน์ที่เกี่ยวข้อง";
 }
 

@@ -8,6 +8,8 @@ import { invalidateEventsStatsCache } from "@/lib/events-cache";
 import { generateSubpoenaDocx, type SubpoenaEventItem } from "@/lib/subpoena/docx-generator";
 import {
   buildDestinationForPlatforms,
+  getIspShortCode,
+  isAisOrTrueDtac,
   matchIspContact,
   renderEmailDraft,
   type IspContactRow,
@@ -230,13 +232,18 @@ export async function POST(req: NextRequest) {
 
   let totalDbUpdated = 0;
 
+  const issueYearMatch = issueDate.match(/^(\d{4})-/);
+  const thaiYear2Digit = String(((issueYearMatch ? Number(issueYearMatch[1]) : new Date().getFullYear()) + 543) % 100).padStart(2, "0");
+
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i];
     const seqNo = startNum + i;
     const letterNo = `${letterPrefix}${seqNo}`;
     const platformsArr = Array.from(g.platforms);
     const destination = buildDestinationForPlatforms(platformsArr);
-    const docxFilename = `${sanitizeFilePart(letterNo)}_${sanitizeFilePart(g.contact?.provider_code || g.display_name)}.docx`;
+    const ispShort = getIspShortCode(g.contact, g.display_name);
+    const docxFilename = `TCSD2_${thaiYear2Digit}-${seqNo}_${ispShort}.docx`;
+    const includeTrafficLog90d = !isAisOrTrueDtac(g.contact?.provider_code, g.display_name);
 
     const email = renderEmailDraft({
       contact: g.contact,
@@ -266,6 +273,7 @@ export async function POST(req: NextRequest) {
         contact_position: contactPosition,
         contact_phone: contactPhone,
         contact_email: contactEmail,
+        include_traffic_log_90d: includeTrafficLog90d,
         events: g.events,
       });
       zipOut.file(docxFilename, docxBuf);

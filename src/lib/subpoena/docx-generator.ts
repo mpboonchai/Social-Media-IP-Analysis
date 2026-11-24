@@ -201,7 +201,7 @@ export async function generateSubpoenaDocx(input: SubpoenaDocxInput): Promise<Bu
     const toIso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const clause3Text =
       `ข้อมูลจราจรทางคอมพิวเตอร์ (Log File) ของผู้ใช้บริการดังกล่าว ตั้งแต่ วันที่ ${formatThaiDateLong(fromIso)} ถึง วันที่ ${formatThaiDateLong(toIso)} ` +
-      `ได้แก่ วันเวลาที่เข้า-ออกระบบ (Login/Logout), หมายเลข IP Address ต้นทาง-ปลายทาง และพอร์ตเชื่อมต่อ (Port) เพื่อประโยชน์ในการสืบสวนสอบสวนและพิสูจน์ทราบตัวผู้กระทำความผิด (ถ้ามี)`;
+      `ได้แก่ วันเวลาที่เข้า-ออกระบบ (Login/Logout), หมายเลข IP Address ต้นทาง-ปลายทาง และพอร์ตเชื่อมต่อ (Port)`;
 
     // Clone P[6] (same Word auto-numbering w:numPr, font, indent, and zero drawings so signature in P[7] is never duplicated)
     const pClause3Xml = $.html(pClause1);
